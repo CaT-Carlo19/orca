@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { translate } from '@/i18n/i18n'
 import {
   cancelManagedRuntimeInstall,
-  installManagedRuntime
+  installManagedRuntime,
+  removeManagedRuntime
 } from '@/runtime/managed-runtime-install-status'
 import type { ManagedRuntimeInstallObservation } from '@/runtime/use-managed-runtime-install'
 import { Button } from '../ui/button'
@@ -11,32 +12,30 @@ import {
   managedRuntimeInstallView,
   type ManagedRuntimeInstallAction
 } from './managed-runtime-install-view'
+import { ManagedRuntimeRemoveButton } from './ManagedRuntimeRemoveButton'
 
-/** Settings' Install, progress and Cancel for the runtime Orca provides an agent, on the host it
- *  runs on. A chat's install card shows the same host answer, so either one's action moves both. */
+/** Settings' Install, progress, Cancel and Remove for the runtime Orca provides an agent, on the
+ *  host it runs on. A chat's install card shows the same host answer, so either one's action moves
+ *  both. */
 export function ManagedRuntimeInstallRow(props: {
   observation: Extract<ManagedRuntimeInstallObservation, { kind: 'active' }>
   agentLabel: string
 }): React.JSX.Element {
   const { observation, agentLabel } = props
   // A click holds its button until the host answers, so a double click starts nothing twice.
-  const [pending, setPending] = useState<ManagedRuntimeInstallAction['kind'] | null>(null)
+  const [pending, setPending] = useState<'install' | 'cancel' | 'remove' | null>(null)
   const view = managedRuntimeInstallView(observation.snapshot, agentLabel, pending === 'cancel')
   const [refusal, setRefusal] = useState<string | null>(null)
-  const act = (action: ManagedRuntimeInstallAction): void => {
-    setPending(action.kind)
+  const { subject } = observation
+  const act = (kind: 'install' | 'cancel' | 'remove', request: () => Promise<void>): void => {
+    setPending(kind)
     setRefusal(null)
-    const { subject } = observation
-    const request =
-      action.kind === 'cancel'
-        ? cancelManagedRuntimeInstall(subject, action.operationId)
-        : installManagedRuntime(subject)
-    void request
+    void request()
       .catch((cause: unknown) =>
         setRefusal(
           cause instanceof Error
             ? cause.message
-            : action.kind === 'cancel'
+            : kind === 'cancel'
               ? translate(
                   'components.managed-runtime.cancelFailed',
                   "Couldn't cancel the installation. Try again."
@@ -48,6 +47,11 @@ export function ManagedRuntimeInstallRow(props: {
   }
   const alert = refusal ?? view.error
   const { action } = view
+  const removable = observation.removable && view.removable
+  const primary = (chosen: ManagedRuntimeInstallAction) => () =>
+    chosen.kind === 'cancel'
+      ? cancelManagedRuntimeInstall(subject, chosen.operationId)
+      : installManagedRuntime(subject)
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border p-3 text-xs">
       <div className="min-w-0 flex-1 space-y-1">
@@ -69,16 +73,25 @@ export function ManagedRuntimeInstallRow(props: {
           </p>
         ) : null}
       </div>
-      {action ? (
-        <div className="flex shrink-0 justify-end">
-          <Button
-            size="xs"
-            variant={action.kind === 'cancel' ? 'ghost' : 'outline'}
-            disabled={pending !== null}
-            onClick={() => act(action)}
-          >
-            {action.label}
-          </Button>
+      {action || removable ? (
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          {removable ? (
+            <ManagedRuntimeRemoveButton
+              agentLabel={agentLabel}
+              disabled={pending !== null}
+              onRemove={() => act('remove', () => removeManagedRuntime(subject))}
+            />
+          ) : null}
+          {action ? (
+            <Button
+              size="xs"
+              variant={action.kind === 'cancel' ? 'ghost' : 'outline'}
+              disabled={pending !== null}
+              onClick={() => act(action.kind, primary(action))}
+            >
+              {action.label}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

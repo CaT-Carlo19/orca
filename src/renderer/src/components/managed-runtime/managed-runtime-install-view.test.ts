@@ -76,6 +76,25 @@ describe('managedRuntimeInstallView', () => {
       'Update Fake',
       null
     ])
+    const removal = (patch: Partial<ManagedRuntimeOperation>) =>
+      managedRuntimeInstallView(
+        {
+          kind: 'known',
+          state: { ...idle, ...installed, operation: op({ kind: 'remove', ...patch }) }
+        },
+        'Fake'
+      )
+    expect(removal({ phase: 'removing' })).toMatchObject({
+      status: 'Removing…',
+      action: null,
+      removable: false
+    })
+    // A refused removal keeps the files, so Remove stays offered beside the host's reason.
+    expect(removal({ phase: 'failed', error: 'Fake could not be stopped.' })).toMatchObject({
+      status: 'Installed.',
+      error: 'Fake could not be stopped.',
+      removable: true
+    })
     expect(shown({ available: false, version: null })).toEqual([
       'Fake is not available on this host.',
       null,
