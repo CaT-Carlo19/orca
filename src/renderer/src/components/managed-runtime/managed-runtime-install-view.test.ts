@@ -95,6 +95,9 @@ describe('managedRuntimeInstallView', () => {
       error: 'Fake could not be stopped.',
       removable: true
     })
+    // A damaged copy is removable too, so a broken install never leaves Settings without an exit.
+    const damaged = { kind: 'known' as const, state: { ...idle, damaged: true, canRemove: true } }
+    expect(managedRuntimeInstallView(damaged, 'Fake').removable).toBe(true)
     expect(shown({ available: false, version: null })).toEqual([
       'Fake is not available on this host.',
       null,

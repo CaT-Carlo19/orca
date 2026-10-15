@@ -69,7 +69,8 @@ function settledView(state: ManagedRuntimeInstallState, agent: string): ManagedR
     progress: null,
     error,
     action: label === null ? null : { kind: 'install', label },
-    removable: state.installedVersion !== null
+    // An older host without canRemove offers Remove only for a whole copy.
+    removable: state.canRemove ?? state.installedVersion !== null
   })
   const install = translate('components.managed-runtime.install', 'Install {{agent}}', { agent })
   // A copy found outside Orca already runs; Orca's own, once installed, runs first.
