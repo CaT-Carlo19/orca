@@ -49,6 +49,7 @@ export type WorkspaceSourceSelectionKind =
   | 'branch'
   | 'linear'
   | 'jira'
+  | 'local'
 
 export type WorkspaceSourceSelection = {
   kind: WorkspaceSourceSelectionKind
@@ -82,6 +83,9 @@ export function getWorkspaceSourceProvider(item: WorkspaceSourceItemLike): Works
   if (item.provider) {
     return item.provider
   }
+  if (isLocalTaskUrl(item.url)) {
+    return 'local'
+  }
   if (item.linearIdentifier) {
     return 'linear'
   }
@@ -95,6 +99,10 @@ export function getWorkspaceSourceProvider(item: WorkspaceSourceItemLike): Works
     return 'linear'
   }
   return 'github'
+}
+
+function isLocalTaskUrl(url: string): boolean {
+  return url.startsWith('orca://local-task/v1/')
 }
 
 export function buildGitHubWorkspaceSource(item: {
@@ -196,21 +204,26 @@ export function buildWorkspaceSourceSelection(args: {
   }
   const provider = getWorkspaceSourceProvider(linkedWorkItem)
   const kind: WorkspaceSourceSelectionKind =
-    provider === 'linear'
-      ? 'linear'
-      : provider === 'jira'
-        ? 'jira'
-        : provider === 'gitlab'
-          ? linkedWorkItem.type === 'mr'
-            ? 'gitlab-mr'
-            : 'gitlab-issue'
-          : linkedWorkItem.type === 'pr'
-            ? 'github-pr'
-            : 'github-issue'
+    provider === 'local'
+      ? 'local'
+      : provider === 'linear'
+        ? 'linear'
+        : provider === 'jira'
+          ? 'jira'
+          : provider === 'gitlab'
+            ? linkedWorkItem.type === 'mr'
+              ? 'gitlab-mr'
+              : 'gitlab-issue'
+            : linkedWorkItem.type === 'pr'
+              ? 'github-pr'
+              : 'github-issue'
   return {
     kind,
     label:
-      provider === 'linear' || provider === 'jira' || linkedWorkItem.number === 0
+      provider === 'local' ||
+      provider === 'linear' ||
+      provider === 'jira' ||
+      linkedWorkItem.number === 0
         ? linkedWorkItem.title
         : `#${linkedWorkItem.number} ${linkedWorkItem.title}`,
     url: linkedWorkItem.url
@@ -224,5 +237,5 @@ export function shouldPreserveWorkspaceSourceOnRepoChange(
     return false
   }
   const provider = getWorkspaceSourceProvider(item)
-  return provider === 'linear' || provider === 'jira'
+  return provider === 'local' || provider === 'linear' || provider === 'jira'
 }

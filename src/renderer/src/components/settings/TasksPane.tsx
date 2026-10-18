@@ -42,6 +42,18 @@ const PROVIDER_META: Record<
     Icon: (props: { className?: string }) => React.JSX.Element
   }
 > = {
+  local: {
+    get label() {
+      return translate('auto.components.settings.TasksPane.localLabel', 'Local')
+    },
+    get description() {
+      return translate(
+        'auto.components.settings.TasksPane.localDescription',
+        'Track tasks per project without connecting an integration.'
+      )
+    },
+    Icon: ({ className }) => <LinearIcon className={className} />
+  },
   github: {
     get label() {
       return translate('auto.components.settings.TasksPane.e14063e727', 'GitHub')

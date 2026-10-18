@@ -31,34 +31,34 @@ export function getAutomationSourceDisplay(
   return { label, title }
 }
 
+const PROVIDER_LABEL: Record<TaskSourceContext['provider'], string> = {
+  local: 'Local',
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  linear: 'Linear',
+  jira: 'Jira'
+}
+
 function getProviderLabel(provider: TaskSourceContext['provider']): string {
-  switch (provider) {
-    case 'github':
-      return 'GitHub'
-    case 'gitlab':
-      return 'GitLab'
-    case 'linear':
-      return 'Linear'
-    case 'jira':
-      return 'Jira'
-  }
+  return PROVIDER_LABEL[provider]
 }
 
 function getSourceIdentityLabel(sourceContext: TaskSourceContext): string | null {
   const identity = sourceContext.providerIdentity
-  if (identity) {
-    switch (identity.provider) {
-      case 'github':
-        return `${identity.owner}/${identity.repo}`
-      case 'gitlab':
-        return identity.namespace && identity.project
-          ? `${identity.namespace}/${identity.project}`
-          : (identity.projectId ?? null)
-      case 'linear':
-        return identity.workspaceName ?? identity.workspaceId ?? null
-      case 'jira':
-        return identity.siteUrl ?? identity.siteId ?? null
-    }
+  switch (identity?.provider) {
+    case 'local':
+      return identity.boardId ?? null
+    case 'github':
+      return `${identity.owner}/${identity.repo}`
+    case 'gitlab':
+      return identity.namespace && identity.project
+        ? `${identity.namespace}/${identity.project}`
+        : (identity.projectId ?? null)
+    case 'linear':
+      return identity.workspaceName ?? identity.workspaceId ?? null
+    case 'jira':
+      return identity.siteUrl ?? identity.siteId ?? null
+    default:
+      return sourceContext.accountLabel ?? sourceContext.repoId ?? null
   }
-  return sourceContext.accountLabel ?? sourceContext.repoId ?? null
 }
