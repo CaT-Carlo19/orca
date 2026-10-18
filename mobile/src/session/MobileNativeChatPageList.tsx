@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
@@ -10,16 +11,12 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollView
+  type ScrollView,
+  type StyleProp,
+  type ViewStyle
 } from 'react-native'
 import type { NativeChatMessage } from '../../../src/shared/native-chat-types'
-import {
-  MobileNativeChatDisclosureEpochContext,
-  MobileNativeChatKeptScope,
-  useMobileNativeChatDisclosureEpochs
-} from './mobile-native-chat-kept-disclosures'
 import type { MobileNativeChatRowKeys } from './mobile-native-chat-row-keys'
-import { styles } from './mobile-native-chat-view-styles'
 import { MobileNativeChatPageScroll, outOfAnchoring } from './MobileNativeChatPageScroll'
 import type { MobileNativeChatListHandle } from './use-mobile-native-chat-tail-follow'
 import type { MobileNativeChatTurnRow } from './use-mobile-native-chat-turn-disclosure'
@@ -39,7 +36,7 @@ type Props = {
   /** What a row draws besides itself; a height measured for other state no longer holds. */
   rowState: (index: number, row: NativeChatMessage) => MobileNativeChatTurnRow
   layoutKey: string
-  toolsExpanded: boolean
+  contentContainerStyle: StyleProp<ViewStyle>
   /** `measuring`: rows above are not measured yet, so the Load earlier slot shows loading. */
   header: (measuring: boolean) => ReactElement | null
   footer: ReactElement | null
@@ -59,19 +56,12 @@ export function MobileNativeChatPageList({
   renderItem,
   rowState,
   layoutKey,
-  toolsExpanded,
+  contentContainerStyle,
   header,
   footer,
   emptyStateView,
   onScroll
 }: Props): ReactElement {
-  const epochs = useMobileNativeChatDisclosureEpochs(
-    rows,
-    rowKeys.keyOf,
-    rowState,
-    toolsExpanded,
-    rowKeys.scope
-  )
   const scroll = useRef<ScrollView>(null)
   const scroller = useCallback(
     (): MobileNativeChatWindowScroller | null | undefined => scroll.current?.getScrollableNode(),
@@ -112,15 +102,15 @@ export function MobileNativeChatPageList({
   const drawRow = (item: NativeChatMessage, index: number) => {
     const key = rowKeys.keyOf(item)
     return (
-      <MobileNativeChatDisclosureEpochContext.Provider key={key} value={epochs.get(key)?.epoch}>
-        <View ref={rowRef(key)}>{renderItem({ item, index })}</View>
-      </MobileNativeChatDisclosureEpochContext.Provider>
+      <View key={key} ref={rowRef(key)}>
+        {renderItem({ item, index })}
+      </View>
     )
   }
   return (
     <MobileNativeChatPageScroll
       ref={scroll}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={contentContainerStyle}
       // Let link/file taps land while the composer keyboard is up
       // instead of being swallowed by the dismiss gesture.
       keyboardShouldPersistTaps="handled"
@@ -132,14 +122,15 @@ export function MobileNativeChatPageList({
       {rows.length === 0 ? (
         emptyStateView
       ) : (
-        // Rows unmount once scrolled past; what the reader opened in this chat outlives them.
-        <MobileNativeChatKeptScope key={rowKeys.scope}>
+        // Keyed by the chat, so no row carries into another. Rows unmount once scrolled past; what
+        // the reader opened in them is kept in the chat's disclosure store, above the list.
+        <Fragment key={rowKeys.scope}>
           <View style={[outOfAnchoring, { height: view.above }]} />
           {rows.slice(view.m0, view.m1).map((item, at) => drawRow(item, view.m0 + at))}
           <View style={[outOfAnchoring, { height: view.mid }]} />
           {rows.slice(view.start, view.end).map((item, at) => drawRow(item, view.start + at))}
           <View style={[outOfAnchoring, { height: view.bottom }]} />
-        </MobileNativeChatKeptScope>
+        </Fragment>
       )}
       {footer}
     </MobileNativeChatPageScroll>

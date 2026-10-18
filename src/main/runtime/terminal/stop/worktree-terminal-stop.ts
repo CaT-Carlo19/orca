@@ -1,9 +1,9 @@
 import { OrcaRuntimeWithResolveTerminalSplitSourceAuthority } from '../launch/terminal-split-source-authority'
 import {
   type ResolvedWorktree,
-  runtimeWorktreeIdentityKey,
   runtimeWorktreeIdsEqual
 } from '../../runtime-worktree-path-identity'
+import { worktreeIdentityKey } from '../../../../shared/worktree/id'
 import { teardownRpcDeadline } from '../../worktree-teardown'
 import { WORKTREE_TERMINALS_SLEEPING_ERROR } from '../../worktree-terminals-sleeping-error'
 import type {
@@ -23,6 +23,7 @@ import {
 import { worktreePtyBelongsToHost, type WorktreePtyHostFence } from '../../worktree-pty-host-fence'
 import { summarizeWorktreePtyStopVerdict } from '../../worktree-pty-stop-verdict'
 import { describeMobileSessionTabCloseRefusal } from '../../mobile-session-tab-close-refusal-message'
+import { clearClosedWorktreeResumeRecords } from './worktree-sleep-resume-records'
 
 export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithResolveTerminalSplitSourceAuthority {
   protected abstract sleepResolvedWorktreeTerminals(
@@ -123,6 +124,16 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
     hostId: ExecutionHostId,
     closedTabIds: readonly string[]
   ): Promise<void> {
+    await this.commitWorkspaceSessionEdit(hostId, (session) =>
+      clearClosedWorktreeResumeRecords(session, worktreeId, closedTabIds)
+    )
+  }
+
+  /** Durably replaces a host partition's session with `edit`'s result: null skips, an Error refuses. */
+  protected async commitWorkspaceSessionEdit(
+    hostId: ExecutionHostId,
+    edit: (session: WorkspaceSessionState) => WorkspaceSessionState | Error | null
+  ): Promise<void> {
     if (
       !this.store?.getWorkspaceSession ||
       !this.store.setWorkspaceSession ||
@@ -133,35 +144,12 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
     const refusal = await this.store.runDurableMutation<Error | undefined>(() => {
       // SAFETY: Keep the original late lookup and failure if this capability disappears.
       const session = cloneWorkspaceSessionState(this.store!.getWorkspaceSession!(hostId))
-      const sleepingAgentSessionsByPaneKey = Object.fromEntries(
-        Object.entries(session.sleepingAgentSessionsByPaneKey ?? {}).filter(
-          ([, record]) => record.worktreeId !== worktreeId
-        )
-      )
-      const terminalPtyIncarnationsByPaneKey = Object.fromEntries(
-        Object.entries(session.terminalPtyIncarnationsByPaneKey ?? {}).filter(
-          ([paneKey]) => !closedTabIds.some((tabId) => paneKey.startsWith(`${tabId}:`))
-        )
-      )
-      const remainingTerminalRows = session.tabsByWorktree[worktreeId] ?? []
-      const remainingUnifiedTerminalTabs = (session.unifiedTabs?.[worktreeId] ?? []).filter(
-        (tab) => tab.contentType === 'terminal'
-      )
-      if (remainingTerminalRows.length > 0 || remainingUnifiedTerminalTabs.length > 0) {
-        return { value: new Error('terminal_close_incomplete'), persist: false }
+      const next = edit(session)
+      if (next instanceof Error) {
+        return { value: next, persist: false }
       }
-      const hasChanges =
-        Object.keys(sleepingAgentSessionsByPaneKey).length !==
-          Object.keys(session.sleepingAgentSessionsByPaneKey ?? {}).length ||
-        Object.keys(terminalPtyIncarnationsByPaneKey).length !==
-          Object.keys(session.terminalPtyIncarnationsByPaneKey ?? {}).length
-      if (!hasChanges) {
+      if (!next) {
         return { value: undefined, persist: false }
-      }
-      const next: WorkspaceSessionState = {
-        ...session,
-        sleepingAgentSessionsByPaneKey,
-        terminalPtyIncarnationsByPaneKey
       }
       // SAFETY: Keep the original late lookup and failure if this capability disappears.
       this.store!.setWorkspaceSession!(next, hostId)
@@ -273,7 +261,7 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
       return () => {}
     }
     const release = await this.acquireWorktreeTerminalMutation(worktreeId, 'shared')
-    const key = runtimeWorktreeIdentityKey(worktreeId)
+    const key = worktreeIdentityKey(worktreeId)
     const sleepState = this.terminalSleepStateByWorktreeId.get(key)
     // Why: re-checked under the lock, since a sleep can commit while an automatic spawn waits for it.
     if (sleepState && opts.refuseSleptWorktree) {
@@ -296,7 +284,7 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
 
   /** Whether the host itself has put (or is putting) this worktree's terminals to sleep. */
   protected isWorktreeTerminalSleepHeld(worktreeId: string): boolean {
-    return this.terminalSleepStateByWorktreeId.has(runtimeWorktreeIdentityKey(worktreeId))
+    return this.terminalSleepStateByWorktreeId.has(worktreeIdentityKey(worktreeId))
   }
 
   protected async runWorktreeTerminalMutation<T>(
@@ -318,10 +306,6 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
     kind: WorktreeTerminalMutationKind,
     deadline?: number
   ): Promise<() => void> {
-    return await this.terminalMutationLock.acquire(
-      runtimeWorktreeIdentityKey(worktreeId),
-      kind,
-      deadline
-    )
+    return await this.terminalMutationLock.acquire(worktreeIdentityKey(worktreeId), kind, deadline)
   }
 }

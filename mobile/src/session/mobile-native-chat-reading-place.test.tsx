@@ -1,4 +1,4 @@
-import { createElement as h, Fragment, useMemo, type ReactElement } from 'react'
+import { createElement as h, Fragment, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   act,
   create,
@@ -24,19 +24,50 @@ vi.stubGlobal('navigator', {
     'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/604.1'
 })
 
-vi.mock('react-native', () => ({
-  Platform: platform,
-  Text: 'span',
-  View: 'div',
-  Pressable: 'button'
+vi.mock('react-native', async () => {
+  const React = await import('react')
+  // A class, so an opened run's box can scroll it the way it scrolls a real ScrollView.
+  class ScrollView extends React.Component<{ children?: ReactNode }> {
+    scrollToEnd = (): void => {}
+    scrollTo = (): void => {}
+    render(): ReactNode {
+      return React.createElement('div', null, this.props.children)
+    }
+  }
+  const settled = () => ({ start: (): void => {}, stop: (): void => {} })
+  return {
+    Platform: platform,
+    Text: 'span',
+    View: 'div',
+    Pressable: 'button',
+    ScrollView,
+    Animated: {
+      Text: 'span',
+      Value: class {
+        setValue(): void {}
+      },
+      loop: (animation: unknown) => animation,
+      sequence: settled,
+      timing: settled
+    },
+    StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+    useWindowDimensions: () => ({ width: 400, height: 800 })
+  }
+})
+vi.mock('lucide-react-native', () => {
+  const icon = () => null
+  const names = ['Bot', 'Brain', 'Check', 'ChevronRight', 'Circle', 'CircleCheck', 'CircleDot']
+  const more = ['Eye', 'FileMinus2', 'FilePen', 'FilePlus2', 'Folder', 'Globe', 'ListChecks']
+  const rest = ['MessageSquareMore', 'Pencil', 'Plug', 'Search', 'SquareTerminal', 'Wrench']
+  return Object.fromEntries([...names, ...more, ...rest].map((name) => [name, icon]))
+})
+vi.mock('./mobile-native-chat-tool-styles', () => ({
+  toolStyles: {},
+  toolType: () => ({ row: {}, meta: {}, code: {} })
 }))
-vi.mock('lucide-react-native', () => ({
-  ChevronDown: () => null,
-  SquareChevronRight: () => null,
-  SquareTerminal: () => null,
-  Wrench: () => null
-}))
-vi.mock('./mobile-native-chat-message-styles', () => ({ styles: {} }))
+vi.mock('../components/MobileSourceCopyButton', () => ({ MobileSourceCopyButton: () => null }))
+vi.mock('../platform/external-link', () => ({ openExternalLink: vi.fn() }))
+vi.mock('../components/inline-text-selection', () => ({ INLINE_TEXT_SELECTION: false }))
 
 const say = (id: string, role: 'user' | 'assistant', text: string): NativeChatMessage => ({
   id,
@@ -135,8 +166,7 @@ function Row({ message, rowKey }: { message: NativeChatMessage; rowKey: string }
     h('span', { key: i }, block.type === 'text' ? block.text : '')
   )
   const run =
-    tools.length > 0 &&
-    h(ToolRun, { blocks: tools, defaultExpanded: false, expandChildren: false, activeCall: null })
+    tools.length > 0 && h(ToolRun, { blocks: tools, defaultExpanded: false, expandChildren: false })
   return h('div', { testID: mobileNativeChatRowId(rowKey) }, words, run)
 }
 
@@ -150,7 +180,10 @@ function Chat(props: {
   live: boolean
   listRef: { current: { getScrollableNode: () => Scroller } }
 }): ReactElement {
-  const folded = useMemo(() => foldMobileNativeChatMessages(props.messages), [props.messages])
+  const folded = useMemo(
+    () => foldMobileNativeChatMessages(props.messages, 'claude'),
+    [props.messages]
+  )
   const keys = useMobileNativeChatRowKeys(folded, props.messages, 'chat')
   shownKeys = keys
   return h(
@@ -230,7 +263,7 @@ it('keeps the line a reader was on, its run open, when older messages join the r
   }
 
   // The rows after the run stay put: collapsed, its header holds where it was, not in the result
-  // row's place; open with only its Show more on screen, the header (off screen) holds nothing.
+  // row's place; open, the line on screen holds while older calls join the run above it.
   const later = Array.from({ length: 10 }, (_, i) => say(`t${i}`, 'user', 'later'))
   for (const open of [false, true]) {
     const tail = mount([...from('r21'), ...later])
@@ -327,8 +360,10 @@ it('at the cap, a trim and an append of equal height hold a parked reader and le
   const reader = mount([...chat.slice(3, 15), ...rows])
   reader.press(mobileNativeChatRowId('a1'))
   reader.scroller.scrollTop += reader.scroller.top('chat-member:call:c1')
+  const next = reader.scroller.top('chat-member:call:c2')
+  expect(next).toBeGreaterThan(0)
   reader.show([...chat.slice(4, 15), ...rows, say('done', 'assistant', 'Done')])
-  expect(reader.scroller.top('chat-member:call:c2')).toBe(40)
+  expect(reader.scroller.top('chat-member:call:c2')).toBe(next)
 })
 
 it('a roster keeps its key when the fold moves it, and the rows the reader saw after it stay put', () => {

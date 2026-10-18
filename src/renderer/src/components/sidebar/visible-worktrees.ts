@@ -5,14 +5,16 @@ export {
   type VisibleWorktreeOptions
 } from './compute-visible-worktrees'
 import { computeVisibleWorktreeIds } from './compute-visible-worktrees'
-export { sidebarHasActiveFilters, computeClearFilterActions } from './sidebar-filter-actions'
-export type { ClearFilterActions } from './sidebar-filter-actions'
+export { sidebarHasActiveFilters } from './sidebar-filter-actions'
 import {
   getVisibleWorkspaceHostIdSet,
   worktreeMatchesVisibleHost
 } from './visible-worktree-host-scope'
 import type { Worktree } from '../../../../shared/worktree/types'
-import { buildWorktreeComparator, sortWorktreesSmart } from './smart-sort'
+import {
+  buildWorktreeComparator,
+  sortWorktreesSmart
+} from '../../../../shared/sidebar-list/smart-sort'
 export {
   EMPTY_STRUCTURED_CHAT_WORKTREE_IDS,
   getWorktreeIdsWithStructuredChat

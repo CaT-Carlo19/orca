@@ -1,3 +1,5 @@
+import { openTranscriptAfterHold } from './mobile-structured-transcript-subscription'
+import { startMobileStructuredTranscriptRead } from './mobile-structured-transcript-read'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isRootAgentJournalItem } from '../../../src/shared/agent-session-journal-producer'
 import type {
@@ -28,45 +30,13 @@ import {
 } from './mobile-structured-queued-message-feed'
 import { useMobileOlderPageLoader, type OlderPagePhase } from './use-mobile-older-page-loader'
 
-type QueuedFeed = { messages: MobileQueuedMessageFeed; pause: MobileQueuePause }
+type QueuedFeed = {
+  messages: MobileQueuedMessageFeed
+  pause: MobileQueuePause
+}
 const NO_QUEUED_FEED: QueuedFeed = { messages: null, pause: null }
 
 const MAX_RETAINED_SESSION_STATES = 32
-
-/**
- * Opens the transcript stream once the hold settles, either way: a refused hold is an older host
- * saying it could not start the agent — which the next send does — never a reason to hide the
- * transcript. Returns what ends the stream, opened or not yet. Outside the effect so its cleanup
- * rule can see the stream is owned.
- */
-function openTranscriptAfterHold(
-  client: RpcClient,
-  sessionId: string,
-  held: Promise<unknown>,
-  onFrame: (raw: unknown) => void
-): () => void {
-  let ended = false
-  let close = (): void => {}
-  void held
-    .catch(() => undefined)
-    .then(() => {
-      if (!ended) {
-        close = client.subscribe('agentSession.subscribe', { sessionId }, onFrame)
-      }
-    })
-  return () => {
-    ended = true
-    close()
-  }
-}
-
-function isSubscribeEvent(value: unknown): value is AgentSessionSubscribeEvent {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  const type = (value as { type?: unknown }).type
-  return type === 'snapshot' || type === 'batch' || type === 'reset' || type === 'end'
-}
 
 export function useMobileStructuredAgentState(args: {
   client: RpcClient | null
@@ -185,26 +155,32 @@ export function useMobileStructuredAgentState(args: {
       return
     }
     apply({ type: 'loading' })
+    let streamCurrent = true
     const holderId = structuredAgentSessionHolderId('mobile-chat')
     const held = callAgentSession(client, 'agentSession.hold', {
       sessionId,
       holderId
     })
-    const endStream = openTranscriptAfterHold(client, sessionId, held, (raw) => {
-      if (typeof raw === 'object' && raw !== null && 'type' in raw && raw.type === 'error') {
-        applyReadFailure(raw)
-        return
-      }
-      if (isSubscribeEvent(raw)) {
-        if (raw.type === 'snapshot' || raw.type === 'reset') {
+    const endStream = startMobileStructuredTranscriptRead({
+      sessionId,
+      open: (onFrame) => openTranscriptAfterHold(client, sessionId, held, onFrame),
+      read: (request) => callAgentSession(client, 'agentSession.currentRequests', request),
+      apply: (action) => {
+        if (
+          action.type === 'event' &&
+          (action.event.type === 'snapshot' || action.event.type === 'reset')
+        ) {
           // A replaced window ends an older read that was for the old one.
           supersede()
         }
-        apply({ type: 'event', event: raw })
-        applyQueued(raw)
-      }
+        apply(action)
+      },
+      applyQueued,
+      error: applyReadFailure,
+      isCurrent: () => streamCurrent
     })
     return () => {
+      streamCurrent = false
       supersede()
       endStream()
       void held
