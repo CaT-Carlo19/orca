@@ -85,11 +85,12 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
       const optimistic: LocalTask = { ...task, status, updatedAt: Date.now() }
       setLocalTasks(localTasks.map((entry) => (entry.id === task.id ? optimistic : entry)))
       try {
-        return await updateLocalTask({
+        const updated = await updateLocalTask({
           projectId: localTaskSourceProjectId,
           id: task.id,
           status
-        }).then((updated) => updated ?? optimistic)
+        })
+        return updated ?? optimistic
       } catch (error: unknown) {
         if (isRevisionConflict(error)) {
           try {
@@ -107,6 +108,29 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
         setLocalTasks(previous)
         throw error
       }
+    },
+    [localTaskSourceProjectId, localTasks, setLocalTasks]
+  )
+
+  const editLocalTask = useCallback(
+    async (
+      task: LocalTask,
+      patch: Partial<Pick<LocalTask, 'title' | 'description' | 'status'>>
+    ): Promise<LocalTask | null> => {
+      if (!localTaskSourceProjectId) {
+        throw new Error('No active project for local tasks')
+      }
+      const updated = await updateLocalTask({
+        projectId: localTaskSourceProjectId,
+        id: task.id,
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.status !== undefined ? { status: patch.status } : {})
+      })
+      if (updated) {
+        setLocalTasks(localTasks.map((entry) => (entry.id === task.id ? updated : entry)))
+      }
+      return updated
     },
     [localTaskSourceProjectId, localTasks, setLocalTasks]
   )
@@ -129,6 +153,7 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
     refreshLocalTasks,
     createLocalTask: createLocalTaskMutation,
     moveLocalTask,
+    editLocalTask,
     deleteLocalTask: deleteLocalTaskMutation
   }
 }
