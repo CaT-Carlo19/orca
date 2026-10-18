@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 import { getDefaultSettings } from '../../shared/constants'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 
@@ -27,6 +27,12 @@ vi.mock('./structured-agent-runtime-metadata', () => ({
 
 import { installStructuredAgentAvailability } from './structured-agent-availability'
 
+beforeEach(() => {
+  mocks.refreshed.clear()
+  mocks.observe.mockReset().mockResolvedValue('supported')
+  mocks.recapture.mockReset().mockResolvedValue(undefined)
+})
+
 function install() {
   const listeners: ((updates: Partial<GlobalSettings>, settings: GlobalSettings) => void)[] = []
   const store = {
@@ -43,7 +49,8 @@ function install() {
   return { availability, change }
 }
 
-it('probes the host once in its own home and shares the snapshot with every reader', async () => {
+it('shares a host-home snapshot even if shell recapture fails, retaining it without readers', async () => {
+  mocks.recapture.mockRejectedValueOnce(new Error('shell capture failed'))
   const cwds: string[] = []
   mocks.observe.mockImplementation(async (agent: string, cwd: () => Promise<string>) => {
     cwds.push(await cwd())
@@ -73,8 +80,6 @@ it('probes the host once in its own home and shares the snapshot with every read
 })
 
 it('replaces the snapshot on a launch setting or Refresh, which first recaptures the shell', async () => {
-  mocks.observe.mockReset().mockResolvedValue('supported')
-  mocks.refreshed.clear()
   const { availability, change } = install()
   const read = vi.fn()
   availability.subscribe(read)
@@ -82,14 +87,34 @@ it('replaces the snapshot on a launch setting or Refresh, which first recaptures
   change({ terminalFontSize: 14 })
   change({ agentCmdOverrides: { pi: '/opt/pi' } })
   await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
-  expect(mocks.recapture).not.toHaveBeenCalled()
-
   const capture = Promise.withResolvers<void>()
-  mocks.recapture.mockReturnValueOnce(capture.promise)
+  let version = 'unsupported'
+  mocks.observe.mockImplementation(async () => version)
+  mocks.recapture.mockImplementation(() => capture.promise)
   mocks.refreshed.forEach((listener) => listener())
-  await Promise.resolve()
+  change({ agentDefaultEnv: { pi: { PI_TEST: 'updated' } } })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(read).toHaveBeenCalledTimes(2)
   expect(mocks.observe).toHaveBeenCalledTimes(6)
+  version = 'supported'
   capture.resolve()
   await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(3))
-  expect(mocks.observe).toHaveBeenCalledTimes(9)
+  expect(read.mock.lastCall?.[0]).toContainEqual({ agent: 'opencode', state: 'available' })
+})
+
+it('captures fresh shell facts for a first subscriber even when Refresh had no listener', async () => {
+  const capture = Promise.withResolvers<void>()
+  let version = 'unsupported'
+  mocks.observe.mockImplementation(async () => version)
+  mocks.recapture.mockImplementation(() => capture.promise)
+  mocks.refreshed.forEach((listener) => listener())
+  const { availability } = install()
+  const read = vi.fn()
+  availability.subscribe(read)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(mocks.observe).not.toHaveBeenCalled()
+  version = 'supported'
+  capture.resolve()
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+  expect(read.mock.lastCall?.[0]).toContainEqual({ agent: 'opencode', state: 'available' })
 })

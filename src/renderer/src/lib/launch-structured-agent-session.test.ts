@@ -231,8 +231,7 @@ describe('structured agent session launch', () => {
         1,
         { kind: 'local' },
         'agentSession.createSupport',
-        { worktree: 'id:workspace-1', agent },
-        {}
+        { worktree: 'id:workspace-1', agent }
       )
     }
   )

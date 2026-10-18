@@ -61,8 +61,8 @@ async function observeHostAgent(
     : { agent, state: 'refused', reason: 'agent' }
 }
 
-/** The runtime's snapshot: taken now, then again on a launch setting change or an explicit agent
- *  Refresh (after a fresh shell capture). No reader gates it, so a later one reads it at once. */
+/** The runtime's snapshot: taken after a fresh shell capture, initially and on launch settings or
+ *  agent Refresh. No reader gates it, so a later one reads it at once. */
 export function installStructuredAgentAvailability(
   store: Pick<RuntimeStore, 'onSettingsChanged'> | null,
   runtime: HealthRuntime
@@ -70,10 +70,11 @@ export function installStructuredAgentAvailability(
   const readers = new Set<StructuredAgentAvailabilityReader>()
   let latest: readonly AgentSessionAgentAvailability[] | undefined
   let pass = 0
-  const derive = (freshShell: boolean): void => {
+  const derive = (): void => {
     const mine = ++pass
-    // Why: a failed recapture still probes with the last environment, so every pass publishes.
-    void (freshShell ? recaptureHostShellEnvironment().catch(() => undefined) : Promise.resolve())
+    // Every replacement needs fresh facts, even if it supersedes Refresh or predates its listener.
+    void recaptureHostShellEnvironment()
+      .catch(() => undefined)
       .then(() =>
         Promise.all(
           STRUCTURED_AGENT_RUNTIME_METADATA.map((agent) => observeHostAgent(agent, runtime))
@@ -89,11 +90,11 @@ export function installStructuredAgentAvailability(
   }
   store?.onSettingsChanged?.((updates) => {
     if (HEALTH_SETTINGS.some((key) => key in updates)) {
-      derive(SHELL_SETTINGS.some((key) => key in updates))
+      derive()
     }
   })
-  onAgentsRefreshedOnHost(() => derive(true))
-  derive(false)
+  onAgentsRefreshedOnHost(derive)
+  derive()
   return {
     /** Reads the latest snapshot and every later one; returns the release. */
     subscribe(read: StructuredAgentAvailabilityReader): () => void {
