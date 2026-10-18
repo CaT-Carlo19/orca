@@ -15,6 +15,7 @@ import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 import { CodeHostSetupSteps, JiraSetupSteps } from './TaskSourceSimpleSetup'
 import { TaskSourceLinearSetup } from './TaskSourceLinearSetup'
+import { TaskSourceShowInTasksStep } from './TaskSourceShowInTasksStep'
 import { TaskSourceProviderCard } from './TaskSourceProviderCard'
 import {
   getStalledVisibleTaskProviders,
@@ -228,6 +229,14 @@ export function TasksPane({ settings, updateSettings }: TasksPaneProps): React.J
                     canHide={canHide}
                     onToggleVisible={() => toggleProvider('linear')}
                     onOpenIntegrations={() => openIntegrations(LINEAR_INTEGRATION_SECTION_ID)}
+                  />
+                ) : provider === 'local' ? (
+                  <TaskSourceShowInTasksStep
+                    index={1}
+                    providerLabel={meta.label}
+                    visible={visible}
+                    canHide={canHide}
+                    onToggleVisible={() => toggleProvider('local')}
                   />
                 ) : provider === 'jira' ? (
                   <JiraSetupSteps
