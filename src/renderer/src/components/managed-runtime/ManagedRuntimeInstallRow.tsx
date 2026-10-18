@@ -6,17 +6,21 @@ import {
   removeManagedRuntime
 } from '@/runtime/managed-runtime-install-status'
 import type { ManagedRuntimeInstallObservation } from '@/runtime/use-managed-runtime-install'
-import { Button } from '../ui/button'
+import { LoadingSpinner } from '../LoadingSpinner'
 import { Progress } from '../ui/progress'
 import {
   managedRuntimeInstallView,
   type ManagedRuntimeInstallAction
 } from './managed-runtime-install-view'
+import { ManagedRuntimeLinkButton } from './ManagedRuntimeLinkButton'
 import { ManagedRuntimeRemoveButton } from './ManagedRuntimeRemoveButton'
 
-/** Settings' Install, progress, Cancel and Remove for the runtime Orca provides an agent, on the
- *  host it runs on. A chat's install card shows the same host answer, so either one's action moves
- *  both. */
+// Parts are joined by ' · ', so a sentence followed by another part drops its full stop.
+const said = (text: string, last: boolean): string => (last ? text : text.replace(/[.。]$/u, ''))
+
+/** Settings' one-line install state for the runtime Orca provides an agent, on the host it runs on,
+ *  with its actions as links. A chat's install card shows the same host answer, so either one's
+ *  action moves both. */
 export function ManagedRuntimeInstallRow(props: {
   observation: Extract<ManagedRuntimeInstallObservation, { kind: 'active' }>
   agentLabel: string
@@ -52,49 +56,67 @@ export function ManagedRuntimeInstallRow(props: {
     chosen.kind === 'cancel'
       ? cancelManagedRuntimeInstall(subject, chosen.operationId)
       : installManagedRuntime(subject)
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border p-3 text-xs">
-      <div className="min-w-0 flex-1 space-y-1">
-        {/* The line stays while the first read is out, so nothing shifts when it lands. */}
-        <p role="status" aria-live="polite" className="min-h-4 text-muted-foreground tabular-nums">
-          {view.status}
-        </p>
+  const parts: React.ReactNode[] = []
+  const trailing = Boolean(alert || action || removable || view.note)
+  if (view.status !== null) {
+    parts.push(
+      <span key="status" className="inline-flex items-center gap-1.5">
+        {view.removing ? <LoadingSpinner className="size-3" /> : null}
+        {said(view.status, !trailing)}
         {view.progress === null ? null : (
           <Progress
             value={view.progress}
+            className="h-1 w-44"
             aria-label={translate('components.managed-runtime.progress', '{{agent}} download', {
               agent: agentLabel
             })}
           />
         )}
-        {alert ? (
-          <p role="alert" className="break-words text-destructive">
-            {alert}
-          </p>
-        ) : null}
-      </div>
-      {action || removable ? (
-        <div className="flex shrink-0 items-center justify-end gap-1">
-          {removable ? (
-            <ManagedRuntimeRemoveButton
-              agentLabel={agentLabel}
-              host={subject.target}
-              disabled={pending !== null}
-              onRemove={() => act('remove', () => removeManagedRuntime(subject))}
-            />
-          ) : null}
-          {action ? (
-            <Button
-              size="xs"
-              variant={action.kind === 'cancel' ? 'ghost' : 'outline'}
-              disabled={pending !== null}
-              onClick={() => act(action.kind, primary(action))}
-            >
-              {action.label}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      </span>
+    )
+  }
+  if (alert) {
+    parts.push(
+      <span key="alert" role="alert" className="break-words text-destructive">
+        {said(alert, !(action || removable || view.note))}
+      </span>
+    )
+  }
+  if (action) {
+    parts.push(
+      <ManagedRuntimeLinkButton
+        key="action"
+        disabled={pending !== null}
+        onClick={() => act(action.kind, primary(action))}
+      >
+        {action.label}
+      </ManagedRuntimeLinkButton>
+    )
+  }
+  if (removable) {
+    parts.push(
+      <ManagedRuntimeRemoveButton
+        key="remove"
+        agentLabel={agentLabel}
+        host={subject.target}
+        disabled={pending !== null}
+        onRemove={() => act('remove', () => removeManagedRuntime(subject))}
+      />
+    )
+  }
+  if (view.note) {
+    parts.push(<span key="note">{view.note}</span>)
+  }
+  // The line keeps its height while the first read is out, so nothing shifts when it lands.
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-4 flex-wrap items-center gap-x-1 text-xs text-muted-foreground tabular-nums"
+    >
+      {parts.flatMap((part, index) =>
+        index === 0 ? [part] : [<span key={`sep-${index}`}>·</span>, part]
+      )}
     </div>
   )
 }

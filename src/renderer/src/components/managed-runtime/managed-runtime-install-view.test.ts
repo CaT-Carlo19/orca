@@ -27,7 +27,7 @@ const op = (patch: Partial<ManagedRuntimeOperation>): ManagedRuntimeOperation =>
 
 function shown(patch: Partial<ManagedRuntimeInstallState>) {
   const view = managedRuntimeInstallView({ kind: 'known', state: { ...idle, ...patch } }, 'Fake')
-  return [view.status, view.action?.label ?? null, view.error]
+  return [view.status, view.action?.label ?? null, view.error, view.note]
 }
 
 describe('managedRuntimeInstallView', () => {
@@ -37,20 +37,23 @@ describe('managedRuntimeInstallView', () => {
       installedCurrent: true,
       source: 'managed' as const
     }
-    expect(shown({})).toEqual(['Not installed.', 'Install Fake', null])
+    expect(shown({})).toEqual(['Not installed.', 'Install', null, null])
     expect(shown({ downloadBytes: 111_456_962 })).toEqual([
-      '112 MB download.',
-      'Install Fake',
-      null
+      'Not installed.',
+      'Install',
+      null,
+      '112 MB download.'
     ])
     expect(shown({ operation: op({}) })).toEqual([
       'Downloading 42.0 MB of 111.0 MB.',
-      'Cancel installation',
+      'Cancel',
+      null,
       null
     ])
     expect(shown({ operation: op({ phase: 'verifying' }) })).toEqual([
       'Checking the downloaded runtime.',
-      'Cancel installation',
+      'Cancel',
+      null,
       null
     ])
     // Only the row whose Cancel is still out says so; the host publishes no cancelling phase.
@@ -62,18 +65,23 @@ describe('managedRuntimeInstallView', () => {
     expect(cancelling.status).toBe('Cancelling…')
     expect(shown({ operation: op({ phase: 'cancelled' }) })).toEqual([
       'Installation cancelled.',
-      'Retry installation',
+      'Try again',
+      null,
       null
     ])
+    // A failed install says only why, beside Try again.
     expect(shown({ operation: op({ phase: 'failed', error: 'No space left.' }) })).toEqual([
-      'Not installed.',
-      'Retry installation',
-      'No space left.'
+      null,
+      'Try again',
+      'No space left.',
+      null
     ])
-    expect(shown(installed)).toEqual(['Installed.', 'Reinstall Fake', null])
+    // A healthy copy offers no Reinstall; Remove is its only action.
+    expect(shown(installed)).toEqual(['Installed.', null, null, null])
     expect(shown({ ...installed, installedVersion: '1.2.0', installedCurrent: false })).toEqual([
       'Installed.',
-      'Update Fake',
+      'Update',
+      null,
       null
     ])
     const removal = (patch: Partial<ManagedRuntimeOperation>) =>
@@ -92,7 +100,8 @@ describe('managedRuntimeInstallView', () => {
     expect(removal({ phase: 'removing' })).toMatchObject({
       status: 'Removing…',
       action: null,
-      removable: false
+      removable: false,
+      removing: true
     })
     // A refused removal keeps the files, so Remove stays offered beside the host's reason.
     expect(removal({ phase: 'failed', error: 'Fake could not be stopped.' })).toMatchObject({
@@ -106,17 +115,20 @@ describe('managedRuntimeInstallView', () => {
     expect(shown({ available: false, version: null })).toEqual([
       'Fake is not available on this host.',
       null,
+      null,
       null
     ])
     expect(shown({ damaged: true })).toEqual([
       'This copy of Fake is damaged.',
-      'Install Fake',
+      'Reinstall',
+      null,
       null
     ])
     const external = { source: 'external' as const }
     expect(shown(external)).toEqual([
       'Uses the copy of Fake found on this host.',
       "Install Orca's copy",
+      null,
       null
     ])
   })

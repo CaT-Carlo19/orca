@@ -15,9 +15,23 @@ export type ManagedRuntimeInstallView = {
   action: ManagedRuntimeInstallAction | null
   /** Settings may offer to delete the copy Orca installed: one is there and nothing runs. */
   removable: boolean
+  /** A removal runs, so the line shows it as work in progress. */
+  removing: boolean
+  /** Said after the actions, such as what Install downloads. */
+  note: string | null
 }
 
 export const megabytes = (bytes: number): string => (bytes / 1_000_000).toFixed(1)
+
+const EMPTY: ManagedRuntimeInstallView = {
+  status: null,
+  progress: null,
+  error: null,
+  action: null,
+  removable: false,
+  removing: false,
+  note: null
+}
 
 function runningView(
   operation: NonNullable<ManagedRuntimeInstallState['operation']>,
@@ -27,7 +41,7 @@ function runningView(
   const { phase, downloadedBytes: done, totalBytes: total } = operation
   if (phase === 'removing') {
     const status = translate('components.managed-runtime.removing', 'Removing…')
-    return { status, progress: null, error: null, action: null, removable: false }
+    return { ...EMPTY, status, removing: true }
   }
   if (phase !== 'downloading' && phase !== 'extracting' && phase !== 'verifying') {
     return null
@@ -47,13 +61,12 @@ function runningView(
               'Downloading {{done}} MB of {{total}} MB.',
               { done: megabytes(done), total: megabytes(total) }
             )
-  const label = translate('components.managed-runtime.cancel', 'Cancel installation')
+  const label = translate('components.managed-runtime.cancelShort', 'Cancel')
   return {
+    ...EMPTY,
     status,
     progress: phase === 'downloading' && total ? Math.min(100, (done / total) * 100) : null,
-    error: null,
-    action: { kind: 'cancel', label, operationId: operation.id },
-    removable: false
+    action: { kind: 'cancel', label, operationId: operation.id }
   }
 }
 
@@ -62,16 +75,25 @@ function settledView(state: ManagedRuntimeInstallState, agent: string): ManagedR
   const failed = operation?.phase === 'failed'
   const error = failed
     ? (operation.error ??
-      translate('components.managed-runtime.failed', 'Installation failed. Try again.'))
+      (operation.kind === 'install'
+        ? translate('components.managed-runtime.failedTitle', "Couldn't install {{agent}}", {
+            agent
+          })
+        : translate('components.managed-runtime.failed', 'Installation failed. Try again.')))
     : null
-  const view = (status: string | null, label: string | null): ManagedRuntimeInstallView => ({
+  const view = (
+    status: string | null,
+    label: string | null,
+    note: string | null = null
+  ): ManagedRuntimeInstallView => ({
+    ...EMPTY,
     status,
-    progress: null,
     error,
     action: label === null ? null : { kind: 'install', label },
-    removable: state.canRemove === true
+    removable: state.canRemove === true,
+    note
   })
-  const install = translate('components.managed-runtime.install', 'Install {{agent}}', { agent })
+  const install = translate('components.managed-runtime.installShort', 'Install')
   // A copy found outside Orca already runs; Orca's own, once installed, runs first.
   if (state.source === 'external') {
     return view(
@@ -86,9 +108,10 @@ function settledView(state: ManagedRuntimeInstallState, agent: string): ManagedR
     )
   }
   if (state.installedVersion !== null) {
+    // A healthy current copy needs nothing; Remove is its only action.
     const label = state.installedCurrent
-      ? translate('components.managed-runtime.reinstall', 'Reinstall {{agent}}', { agent })
-      : translate('components.managed-runtime.update', 'Update {{agent}}', { agent })
+      ? null
+      : translate('components.managed-runtime.update', 'Update')
     return view(translate('components.managed-runtime.installed', 'Installed.'), label)
   }
   if (!state.available) {
@@ -101,29 +124,33 @@ function settledView(state: ManagedRuntimeInstallState, agent: string): ManagedR
       null
     )
   }
-  // Install repairs it, so it is offered as Install rather than as a retry.
   if (state.damaged) {
     return view(
       translate('components.managed-runtime.damaged', 'This copy of {{agent}} is damaged.', {
         agent
       }),
-      install
+      translate('components.managed-runtime.reinstall', 'Reinstall')
     )
   }
-  // The size says what Install costs.
-  const size = state.downloadBytes
-  const idle =
-    size !== undefined
-      ? translate('components.managed-runtime.downloadSize', '{{size}} MB download.', {
-          size: Math.ceil(size / 1_000_000)
-        })
-      : translate('components.managed-runtime.notInstalled', 'Not installed.')
-  const retry = translate('components.managed-runtime.retry', 'Retry installation')
+  const retry = translate('components.managed-runtime.tryAgain', 'Try again')
   if (operation?.kind === 'install' && operation.phase === 'cancelled') {
     return view(translate('components.managed-runtime.cancelled', 'Installation cancelled.'), retry)
   }
-  // A failed first install keeps its status line beside the failure.
-  return view(idle, operation?.kind === 'install' && failed ? retry : install)
+  // A failed install says only why, beside Try again.
+  if (operation?.kind === 'install' && failed) {
+    return view(null, retry)
+  }
+  // The size says what Install costs.
+  const size = state.downloadBytes
+  return view(
+    translate('components.managed-runtime.notInstalled', 'Not installed.'),
+    install,
+    size === undefined
+      ? null
+      : translate('components.managed-runtime.downloadSize', '{{size}} MB download.', {
+          size: Math.ceil(size / 1_000_000)
+        })
+  )
 }
 
 /** What an install row says and offers for the host's answer. `cancelling`: this row's Cancel is
@@ -135,8 +162,7 @@ export function managedRuntimeInstallView(
 ): ManagedRuntimeInstallView {
   if (snapshot.kind !== 'known') {
     return {
-      status: null,
-      progress: null,
+      ...EMPTY,
       error:
         snapshot.kind === 'readFailed'
           ? translate(
@@ -144,9 +170,7 @@ export function managedRuntimeInstallView(
               'Could not check {{agent}} on this host. Retrying.',
               { agent }
             )
-          : null,
-      action: null,
-      removable: false
+          : null
     }
   }
   const { operation } = snapshot.state

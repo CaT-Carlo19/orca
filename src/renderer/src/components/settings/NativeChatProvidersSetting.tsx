@@ -88,8 +88,8 @@ function ProviderStatus({
   )
 }
 
-/** An agent whose chats run a program Orca downloads shows that program's install row, since its
- *  CLI's install state says nothing about whether its chats can start. */
+/** An agent whose chats run a program Orca downloads shows that program's install state as its
+ *  status line, since its CLI's install state says nothing about whether its chats can start. */
 function ProviderDetail(props: {
   agent: TuiAgent
   installed: readonly TuiAgent[] | null
@@ -99,14 +99,7 @@ function ProviderDetail(props: {
   if (!props.enabledInAgents || runtime.kind !== 'active') {
     return <ProviderStatus {...props} />
   }
-  return (
-    <div className="mt-2">
-      <ManagedRuntimeInstallRow
-        observation={runtime}
-        agentLabel={getAgentLabel(props.agent)}
-      />
-    </div>
-  )
+  return <ManagedRuntimeInstallRow observation={runtime} agentLabel={getAgentLabel(props.agent)} />
 }
 
 export function NativeChatProvidersSetting({

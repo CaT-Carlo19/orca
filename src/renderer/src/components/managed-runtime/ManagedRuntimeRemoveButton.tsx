@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Trash2 } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import { selectExecutionHostDisplayLabel } from '@/lib/execution-host-display-label'
 import { useAppStore } from '@/store'
@@ -14,9 +13,10 @@ import {
   DialogHeader,
   DialogTitle
 } from '../ui/dialog'
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { ManagedRuntimeLinkButton } from './ManagedRuntimeLinkButton'
 
-/** Settings' delete of the runtime Orca downloaded, behind a confirmation: it stops running chats. */
+/** Settings' Remove link for the runtime Orca downloaded, behind a confirmation: it stops running
+ *  chats. */
 export function ManagedRuntimeRemoveButton(props: {
   agentLabel: string
   host: RuntimeClientTarget
@@ -30,23 +30,15 @@ export function ManagedRuntimeRemoveButton(props: {
       ? selectExecutionHostDisplayLabel(state, toRuntimeExecutionHostId(host.environmentId))
       : translate('components.managed-runtime.thisComputer', 'this computer')
   )
-  const label = translate('components.managed-runtime.remove', 'Remove downloaded runtime')
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            disabled={disabled}
-            aria-label={label}
-            onClick={() => setConfirming(true)}
-          >
-            <Trash2 />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
+      <ManagedRuntimeLinkButton
+        disabled={disabled}
+        aria-label={translate('components.managed-runtime.remove', 'Remove downloaded runtime')}
+        onClick={() => setConfirming(true)}
+      >
+        {translate('components.managed-runtime.removeConfirm', 'Remove')}
+      </ManagedRuntimeLinkButton>
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
           <DialogHeader>
@@ -60,7 +52,7 @@ export function ManagedRuntimeRemoveButton(props: {
             <DialogDescription>
               {translate(
                 'components.managed-runtime.removeDescription',
-                'Running {{agent}} chats there stop. Your sign-in and chat history are kept.',
+                '{{agent}} chats that are running stop. Their history is kept.',
                 { agent: agentLabel }
               )}
             </DialogDescription>
