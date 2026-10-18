@@ -277,6 +277,8 @@ const NATIVE_RUNTIME_PREFIXES = [
   'config/scripts/windows-process-tree-creation-time',
   'config/scripts/windows-process-tree-gyp-rebuild',
   'config/scripts/electron-builder-native-rebuild',
+  'config/scripts/native-build-entry',
+  'config/scripts/shared-native-build',
   'config/patches/node-pty@',
   'config/patches/@vscode__windows-process-tree'
 ]
@@ -302,7 +304,11 @@ const NATIVE_CACHE_FILES = new Set([
   'config/scripts/zip-extractor-command.mjs',
   'src/shared/zip-extractor-command.ts',
   'config/scripts/shared-electron-dist-cache.mjs',
-  'config/scripts/space-sharing-copy.mjs'
+  'config/scripts/shared-tree-publish.mjs',
+  'config/scripts/space-sharing-copy.mjs',
+  'config/scripts/native-build-entry.cjs',
+  'config/scripts/native-build-entry-probe.cjs',
+  'config/scripts/shared-native-build.mjs'
 ])
 
 const NATIVE_CACHE_PREFIXES = [
@@ -317,6 +323,7 @@ const SHARED_PACKAGE_PREFIXES = [
   'electron.vite.config.ts',
   'config/electron-builder',
   'config/packaged-runtime',
+  'config/packaged-native-build-entries',
   'config/build-plugins/',
   'config/scripts/build-',
   'config/scripts/smoke-packaged',
