@@ -1,5 +1,6 @@
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import {
   buildNativeChatProviderUpdate,
   isNativeChatProviderDisplayedOn
@@ -9,15 +10,20 @@ import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
 import { AgentIcon, getAgentCatalog, getAgentLabel } from '@/lib/agent-catalog'
 import { chatProviderAgents, useHostStructuredAgentsVersion } from '@/lib/chat-provider-agents'
+import { useManagedRuntimeInstall } from '@/runtime/use-managed-runtime-install'
 import { useAppStore } from '../../store'
 import { readNativeDetectedAgents } from '@/store/slices/local-detected-agent-store-state'
 import { createAgentSettingsUpdateQueue } from './agent-availability-settings'
 import { Card, CardContent } from '../ui/card'
+import { ManagedRuntimeInstallRow } from '../managed-runtime/ManagedRuntimeInstallRow'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader, SettingsSwitch } from './SettingsFormControls'
 import { getChatProvidersSearchEntry } from './chat-providers-search'
 
 const enqueueProviderUpdate = createAgentSettingsUpdateQueue()
+
+// The agents listed here are this computer's, so their downloaded programs are too.
+const CHAT_HOST: RuntimeClientTarget = { kind: 'local' }
 
 const BUILT_IN_CHAT_AGENTS: readonly TuiAgent[] = ['claude', 'codex']
 
@@ -64,6 +70,24 @@ function ProviderStatus({
   )
 }
 
+/** An agent whose chats run a program Orca downloads shows that program's install row, since its
+ *  CLI's install state says nothing about whether its chats can start. */
+function ProviderDetail(props: {
+  agent: TuiAgent
+  installed: readonly TuiAgent[] | null
+  enabledInAgents: boolean
+}): React.JSX.Element | null {
+  const runtime = useManagedRuntimeInstall(CHAT_HOST, props.agent, props.enabledInAgents)
+  if (!props.enabledInAgents || runtime.kind !== 'active') {
+    return <ProviderStatus {...props} />
+  }
+  return (
+    <div className="mt-2">
+      <ManagedRuntimeInstallRow observation={runtime} agentLabel={getAgentLabel(props.agent)} />
+    </div>
+  )
+}
+
 export function NativeChatProvidersSetting({
   settings,
   updateSettings,
@@ -106,7 +130,7 @@ export function NativeChatProvidersSetting({
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium leading-none">{label}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      <ProviderStatus
+                      <ProviderDetail
                         agent={agent}
                         installed={detectedIds}
                         enabledInAgents={enabledInAgents}
