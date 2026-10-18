@@ -11,12 +11,12 @@ import { subscribeRuntimeRpc } from './runtime-rpc-subscribe'
  * any of its workspaces reads this one projection. Keyed by host, runtime instance and pairing, so a
  * restarted or re-paired host reads as not ready until it answers, while a reconnect keeps it.
  *
- * Not ready until the first snapshot lands, then kept after the last holder leaves and through lost
- * contact. A stream lost before any snapshot is ready with none, which every agent reads as unknown.
+ * A received snapshot is kept without readers and through lost contact. A first failure has no
+ * roster; unlike a received empty frame, it says nothing about which agents this host registered.
  */
 export type HostStructuredAgentAvailability =
-  | { ready: false }
-  | { ready: true; byAgent: ReadonlyMap<string, AgentSessionAgentAvailability> }
+  | { state: 'pending' | 'unavailable' }
+  | { state: 'received'; byAgent: ReadonlyMap<string, AgentSessionAgentAvailability> }
 
 export type HostStructuredAgentAvailabilityOwner = {
   target: RuntimeClientTarget
@@ -34,7 +34,7 @@ type Resource = {
   close: (() => void) | null
 }
 
-const NOT_READY: HostStructuredAgentAvailability = { ready: false }
+const NOT_READY: HostStructuredAgentAvailability = { state: 'pending' }
 const resources = new Map<string, Resource>()
 const listeners = new Set<() => void>()
 
@@ -59,14 +59,15 @@ function open(key: string, resource: Resource, target: RuntimeClientTarget): voi
   // Only this open's stream, while its entry is current, may publish or be lost.
   const live = (): boolean => resources.get(key) === resource && resource.close === close
   const settle = (byAgent: ReadonlyMap<string, AgentSessionAgentAvailability>): void => {
-    resource.model = { ready: true, byAgent }
+    resource.model = { state: 'received', byAgent }
     publish()
   }
   const lose = (): void => {
     if (live()) {
       close()
-      if (!resource.model.ready) {
-        settle(new Map())
+      if (resource.model.state === 'pending') {
+        resource.model = { state: 'unavailable' }
+        publish()
       }
     }
   }

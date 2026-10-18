@@ -165,11 +165,6 @@ export function ProjectedAgentMenuItems({
   model: NewTabAgentMenuModel
   runLaunch: (row: NewTabAgentMenuRow) => void
 }): React.JSX.Element {
-  const {
-    rows,
-    settling,
-    detection: { detectedIds, detectionFailed, needsServerUpdate }
-  } = model
   const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent)
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
@@ -178,11 +173,11 @@ export function ProjectedAgentMenuItems({
     openSettingsTarget({ pane: 'agents', repoId: null })
     openSettingsPage()
   }, [openSettingsPage, openSettingsTarget])
-  if (settling) {
+  if (model.state === 'loading') {
     // Why: rows fill in once when every answer is known, instead of reshuffling under the pointer.
     return (
       <>
-        {PLACEHOLDER_WIDTHS.slice(0, Math.max(rows.length, 2)).map((width) => (
+        {PLACEHOLDER_WIDTHS.slice(0, model.placeholderCount).map((width) => (
           <DropdownMenuItem
             key={width}
             variant="launch"
@@ -199,9 +194,13 @@ export function ProjectedAgentMenuItems({
       </>
     )
   }
+  const {
+    rows,
+    detection: { detectedIds, detectionFailed, needsServerUpdate }
+  } = model
   return (
     <>
-      {rows.length === 0 && (detectedIds !== null || detectionFailed || needsServerUpdate) ? (
+      {(detectedIds === null && (detectionFailed || needsServerUpdate)) || rows.length === 0 ? (
         <DropdownMenuItem
           disabled
           className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 text-muted-foreground"

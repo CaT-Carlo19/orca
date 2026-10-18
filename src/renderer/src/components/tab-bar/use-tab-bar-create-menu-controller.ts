@@ -91,7 +91,10 @@ export function useTabBarCreateMenuController({
     agentDetectionTarget
   )
   const commandOverrides = useAppStore((state) => state.settings?.agentCmdOverrides)
-  const agentLaunchOptions = buildTabAgentLaunchOptionsFromRows(agentMenu.rows, commandOverrides)
+  const agentLaunchOptions = buildTabAgentLaunchOptionsFromRows(
+    agentMenu.state === 'settled' ? agentMenu.rows : [],
+    commandOverrides
+  )
   const pendingNewTabMenuFocusRef = useRef<(() => void) | null>(null)
   const pendingNewTabMenuFocusAnimationRef = useRef<number | null>(null)
   const pendingNewTabMenuFocusRetryRef = useRef<number | null>(null)

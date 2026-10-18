@@ -26,10 +26,10 @@ it('keeps the snapshot through lost contact and after its last holder, until the
   acquire(owner)()
   expect(subscribe).toHaveBeenCalledTimes(1)
   expect(subscribe.mock.calls[0][2]).toEqual({})
-  expect(read('runtime:env', 'r1', 1)).toEqual({ ready: false })
+  expect(read('runtime:env', 'r1', 1)).toEqual({ state: 'pending' })
   const pi = { agent: 'pi', state: 'refused' }
   handlers(0).onEvent({ type: 'availability', agents: [pi] })
-  const known = { ready: true, byAgent: new Map([['pi', pi]]) }
+  const known = { state: 'received', byAgent: new Map([['pi', pi]]) }
 
   handlers(0).onClose()
   expect(read('runtime:env', 'r1', 1)).toEqual(known)
@@ -42,11 +42,15 @@ it('keeps the snapshot through lost contact and after its last holder, until the
   expect(read('runtime:env', 'r1', 1)).toEqual(known)
 
   acquire({ ...owner, pairingRevision: 2 })
-  expect(read('runtime:env', 'r1', 2)).toEqual({ ready: false })
+  expect(read('runtime:env', 'r1', 2)).toEqual({ state: 'pending' })
 })
 
-it('reads a stream lost before its first snapshot as ready with no answers', () => {
+it('distinguishes first-stream failure from an authoritative empty roster, retaining failure during reacquire', () => {
   acquire({ ...owner, runtimeId: 'r2' })
   handlers(0).onError(new Error('lost'))
-  expect(read('runtime:env', 'r2', 1)).toEqual({ ready: true, byAgent: new Map() })
+  expect(read('runtime:env', 'r2', 1)).toEqual({ state: 'unavailable' })
+  acquire({ ...owner, runtimeId: 'r2' })
+  expect(read('runtime:env', 'r2', 1)).toEqual({ state: 'unavailable' })
+  handlers(1).onEvent({ type: 'availability', agents: [] })
+  expect(read('runtime:env', 'r2', 1)).toEqual({ state: 'received', byAgent: new Map() })
 })

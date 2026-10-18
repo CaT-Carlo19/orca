@@ -4,8 +4,11 @@ import type { ChatUnavailableReason, NewTabAgentMenuRow } from '@/lib/new-tab-ag
 
 export function chatUnavailableLabel(reason: ChatUnavailableReason): string {
   switch (reason) {
-    case 'pending':
-      return ''
+    case 'check-failed':
+      return translate(
+        'auto.components.tab.bar.QuickLaunchButton.chatCheckFailed',
+        'Couldn’t check chat availability'
+      )
     case 'not-installed':
       return translate(
         'auto.components.tab.bar.QuickLaunchButton.chatNotInstalled',

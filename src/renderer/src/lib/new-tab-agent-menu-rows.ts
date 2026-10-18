@@ -12,7 +12,7 @@ import { orderTabLaunchAgents as orderAgents } from '@/components/tab-bar/tab-ag
 /** What the workspace's machine says about opening an agent as a chat, installation aside. */
 export type HostChatAnswer = 'yes' | 'not-yet-known' | 'ssh' | 'wsl' | 'not-on-host' | 'no-chats'
 
-export type ChatUnavailableReason = 'pending' | 'not-installed' | 'ssh' | 'wsl' | 'not-on-host'
+export type ChatUnavailableReason = 'check-failed' | 'not-installed' | 'ssh' | 'wsl' | 'not-on-host'
 
 export type NewTabAgentMenuRow = (
   | { kind: 'chat'; agent: TuiAgent }
@@ -30,7 +30,6 @@ export function buildNewTabAgentMenuRows(args: {
   detectedOnHost: readonly TuiAgent[] | null
   /** The agents Orca can open as a chat. */
   chatAgents: readonly TuiAgent[]
-  catalogLoaded?: boolean
   hostChatAnswer: (agent: TuiAgent) => HostChatAnswer
 }): NewTabAgentMenuRow[] {
   const { settings } = args
@@ -41,34 +40,25 @@ export function buildNewTabAgentMenuRows(args: {
   }
   const runnable: TuiAgent[] = []
   const unavailable = new Map<TuiAgent, ChatUnavailableReason>()
-  const awaitingDefaultOrCatalog = new Set<TuiAgent>()
-  const candidates = [
-    ...new Set([...args.chatAgents, ...(args.catalogLoaded === false ? installed : [])])
-  ]
-  for (const agent of filterEnabledTuiAgents(candidates, settings?.disabledTuiAgents)) {
+  for (const agent of filterEnabledTuiAgents(args.chatAgents, settings?.disabledTuiAgents)) {
     if (!isNativeChatProviderDisplayedOn(settings, agent, args.detectedOnHost)) {
       continue
     }
     const answer = args.hostChatAnswer(agent)
-    if (!args.chatAgents.includes(agent) && answer !== 'ssh' && answer !== 'wsl') {
-      unavailable.set(agent, 'pending')
-      awaitingDefaultOrCatalog.add(agent)
-      continue
-    }
     if (answer === 'yes' && installed.includes(agent)) {
       runnable.push(agent)
     } else {
       unavailable.set(
         agent,
-        answer === 'yes'
-          ? args.detectedOnHost === null
-            ? 'pending'
-            : 'not-installed'
-          : answer === 'not-yet-known'
-            ? 'pending'
-            : answer === 'no-chats'
-              ? 'not-on-host'
-              : answer
+        args.detectedOnHost === null
+          ? 'check-failed'
+          : answer === 'yes'
+            ? 'not-installed'
+            : answer === 'not-yet-known'
+              ? 'check-failed'
+              : answer === 'no-chats'
+                ? 'not-on-host'
+                : answer
       )
     }
   }
@@ -81,7 +71,7 @@ export function buildNewTabAgentMenuRows(args: {
     })),
     ...orderAgents(
       defaultAgent,
-      installed.filter((agent) => !runnable.includes(agent) && !awaitingDefaultOrCatalog.has(agent))
+      installed.filter((agent) => !runnable.includes(agent))
     ).map((agent) => ({ kind: 'cli' as const, agent }))
   ]
 }
