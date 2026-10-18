@@ -1,5 +1,7 @@
 import type { NativeChatMessage } from '../../../src/shared/native-chat-types'
 import type { MobileNativeChatTurnRow } from './use-mobile-native-chat-turn-disclosure'
+import type { MobileNativeChatRowKeys } from './mobile-native-chat-row-keys'
+import type { MobileNativeChatScrollRoots } from './mobile-native-chat-scroll-roots'
 
 type Box = { top: number; bottom: number }
 type Measured = { getBoundingClientRect: () => Box }
@@ -49,4 +51,16 @@ export type MobileNativeChatWindowDrawn = {
   sourceHead: string | undefined
   following: boolean
   layoutKey: string
+}
+
+export type MobileNativeChatPageWindowArgs = {
+  roots?: MobileNativeChatScrollRoots
+  rows: readonly NativeChatMessage[]
+  rowKeys: Pick<MobileNativeChatRowKeys, 'scope' | 'sourceHead' | 'keyOf' | 'current'>
+  rowState: MobileNativeChatWindowRowState
+  following: boolean
+  /** At event time, before a re-render lands. */
+  isFollowing: () => boolean
+  layoutKey: string
+  scroller: () => MobileNativeChatWindowScroller | null | undefined
 }

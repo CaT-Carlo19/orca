@@ -22,10 +22,12 @@ import type { MobileNativeChatListHandle } from './use-mobile-native-chat-tail-f
 import type { MobileNativeChatTurnRow } from './use-mobile-native-chat-turn-disclosure'
 import type { MobileNativeChatWindowScroller } from './mobile-native-chat-page-window-state'
 import { useMobileNativeChatPageWindow } from './use-mobile-native-chat-page-window'
+import type { MobileNativeChatScrollRoots } from './mobile-native-chat-scroll-roots'
 
 type Row = { item: NativeChatMessage; index: number }
 
 type Props = {
+  roots?: MobileNativeChatScrollRoots
   ref: Ref<MobileNativeChatListHandle>
   endAnchored: boolean
   isFollowing: () => boolean
@@ -48,6 +50,7 @@ type Props = {
  *  and older pages went in its header, where iOS stopped scrolling at the seam. */
 export function MobileNativeChatPageList({
   ref,
+  roots,
   endAnchored,
   isFollowing,
   pin,
@@ -68,6 +71,7 @@ export function MobileNativeChatPageList({
     []
   )
   const { view, rowRef, list } = useMobileNativeChatPageWindow({
+    roots,
     rows,
     rowKeys,
     rowState,

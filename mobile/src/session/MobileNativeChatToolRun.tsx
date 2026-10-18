@@ -10,6 +10,7 @@ import {
 import {
   Animated,
   Pressable,
+  Platform,
   ScrollView,
   Text,
   useWindowDimensions,
@@ -52,6 +53,12 @@ import {
 } from './mobile-native-chat-disclosure-store'
 import { toolStyles as styles, toolType } from './mobile-native-chat-tool-styles'
 import { mobileNativeChatMemberId } from './MobileNativeChatScrollHold'
+import { MobileNativeChatOwnedScrollView } from './MobileNativeChatOwnedScrollView'
+import type {
+  MobileNativeChatToolRunAsides,
+  MobileNativeChatToolRunProps
+} from './mobile-native-chat-tool-run-props'
+export type { MobileNativeChatToolRunAsides } from './mobile-native-chat-tool-run-props'
 
 /** Desktop's 18rem: an opened run lists this much before it scrolls in place. */
 const MEMBERS_MIN_HEIGHT = 288
@@ -95,13 +102,6 @@ function PulsingText({
   )
 }
 
-/** Desktop parity: `NativeChatToolRunAsides`. Rows drawn among an open run's lines, each keyed:
- *  before the block they are keyed by, or after the last. */
-export type MobileNativeChatToolRunAsides = {
-  before: ReadonlyMap<NativeChatBlock, readonly React.JSX.Element[]>
-  after: readonly React.JSX.Element[]
-}
-
 /** Desktop parity: `NativeChatToolRunMembers`. An opened run's members in a bounded
  *  box, so live work fills it instead of lengthening the chat. A live run opens on
  *  what it is doing now and follows it while the reader stays at the end. */
@@ -109,6 +109,7 @@ function ToolRunMembers({
   followKey,
   startsAtEnd,
   memoryKey,
+  owner,
   children
 }: {
   /** How much work the run holds: a reader at the end follows it growing. Opening a detail
@@ -117,10 +118,13 @@ function ToolRunMembers({
   startsAtEnd: boolean
   /** The run's disclosure key. The list recycles rows; the box comes back as the reader left it. */
   memoryKey?: string
+  owner?: string
   children: React.ReactNode
 }): React.JSX.Element {
   const { height } = useWindowDimensions()
-  const runScroll = useContext(MobileNativeChatDisclosureContext)?.runScroll
+  const store = useContext(MobileNativeChatDisclosureContext)
+  const runScroll = store?.runScroll
+  const owned = Platform.OS === 'web' && store !== null
   const [remembered] = useState(() =>
     memoryKey === undefined ? undefined : runScroll?.get(memoryKey)
   )
@@ -130,10 +134,10 @@ function ToolRunMembers({
   // Desktop's rule: follow when the work changes, and only if the reader was at the end before
   // it. Resolved here, with the update, so a later detail opening never inherits a follow.
   useLayoutEffect(() => {
-    if (followsEnd.current) {
+    if (!owned && followsEnd.current) {
       scroller.current?.scrollToEnd({ animated: false })
     }
-  }, [followKey])
+  }, [followKey, owned])
   const details = useRef(new Map<string, number>())
   const [openedHeight, setOpenedHeight] = useState(0)
   // Room for the list plus what the reader has opened in it, up to half the screen.
@@ -153,7 +157,7 @@ function ToolRunMembers({
     const { contentOffset, contentSize, layoutMeasurement } = nativeEvent
     followsEnd.current =
       contentSize.height - contentOffset.y - layoutMeasurement.height <= FOLLOW_REARM_PX
-    if (runScroll && memoryKey !== undefined) {
+    if (!owned && runScroll && memoryKey !== undefined) {
       runScroll.delete(memoryKey)
       runScroll.set(memoryKey, { top: contentOffset.y, followsEnd: followsEnd.current })
       if (runScroll.size > MAX_DISCLOSURES) {
@@ -166,14 +170,19 @@ function ToolRunMembers({
   }
   // The remembered offset needs the rows laid out first, which the box's first size reports.
   const onContentSizeChange = () => {
-    if (pendingRestore.current && remembered) {
+    if (!owned && pendingRestore.current && remembered) {
       pendingRestore.current = false
       scroller.current?.scrollTo({ y: remembered.top, animated: false })
     }
   }
   return (
     <MobileNativeChatOpenedDetailContext.Provider value={reportDetail}>
-      <ScrollView
+      <MobileNativeChatOwnedScrollView
+        positionKey={memoryKey ?? `run:${owner ?? 'local'}`}
+        rootIdentity={`run:${owner ?? 'local'}`}
+        owner={owner}
+        initialFollow={startsAtEnd}
+        followKey={followKey}
         ref={scroller}
         style={[
           styles.members,
@@ -187,7 +196,7 @@ function ToolRunMembers({
         onContentSizeChange={onContentSizeChange}
       >
         {children}
-      </ScrollView>
+      </MobileNativeChatOwnedScrollView>
     </MobileNativeChatOpenedDetailContext.Provider>
   )
 }
@@ -207,28 +216,7 @@ export function ToolRun({
   previousUpdatePlan,
   fontScale = 1,
   onOpenFile
-}: {
-  blocks: NativeChatBlock[]
-  /** The last plan each task-list tool wrote before this run, so an update reads as its changes. */
-  previousTodoWrite?: NativeChatToolCallBlock
-  previousUpdatePlan?: NativeChatToolCallBlock
-  defaultExpanded: boolean
-  /** The row this run belongs to. The list recycles rows, so what the reader opened is
-   *  remembered somewhere that outlives the row. */
-  disclosureId?: string
-  /** Rows drawn among the run's lines, each before the block it is keyed by, or after the last. */
-  asides?: MobileNativeChatToolRunAsides
-  /** Every line's default: open under the Tools toggle. */
-  expandChildren: boolean
-  /** Structured lifecycle state; keeps an orphaned running call from spinning. */
-  activeTurnIsWorking?: boolean
-  /** Whether this run is the working turn's last. Only that run is live. */
-  trailing?: boolean
-  /** The turn is blocked on the reader's answer, so its calls decide liveness. */
-  awaitingAnswer?: boolean
-  fontScale?: number
-  onOpenFile?: (path: string) => void
-}): React.JSX.Element {
+}: MobileNativeChatToolRunProps): React.JSX.Element {
   // A reader's choice belongs to the default it deviated from, so toggling the Tools
   // default back restores it.
   const runKey = disclosureId === undefined ? undefined : `run:${disclosureId}:${defaultExpanded}`
@@ -312,6 +300,7 @@ export function ToolRun({
           followKey={blocks.length + asideCount}
           startsAtEnd={live}
           memoryKey={runKey}
+          owner={disclosureId}
         >
           <ToolRunMemberList
             blocks={blocks}
@@ -372,7 +361,11 @@ function ToolRunMemberList({
       const id = memberIdentity(block)
       return (
         <View key={`tasks:${id}`} testID={mobileNativeChatMemberId(id)}>
-          <MobileNativeChatTaskList {...taskList} fontScale={fontScale} />
+          <MobileNativeChatTaskList
+            {...taskList}
+            fontScale={fontScale}
+            disclosureKey={disclosureId === undefined ? undefined : `tasks:${disclosureId}:${id}`}
+          />
         </View>
       )
     }
@@ -385,6 +378,7 @@ function ToolRunMemberList({
             <MobileNativeChatDiffCard
               key={`${id}:${fileIndex}`}
               file={file}
+              rootIdentity={`diff:${id}:${fileIndex}`}
               defaultExpanded={expandChildren}
               disclosureKey={
                 disclosureId === undefined

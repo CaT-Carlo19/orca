@@ -83,17 +83,22 @@ export class MobileNativeChatPageMotion {
   onMotion: ((observation: MobileNativeChatPageObservation) => void) | null = null
   private waiters: (() => void)[] = []
 
-  constructor(private readonly onSettled: () => void) {}
+  constructor(
+    private readonly onSettled: () => void,
+    initialTop = 0
+  ) {
+    this.seen = initialTop
+  }
 
   /** Follows the reader's hand on the scroller (touch, wheel, scroll keys, the scrollbar); returns
    *  the detach. */
-  attach(scroller: Listened): () => void {
+  attach(scroller: Listened, acceptsKey: (event: unknown) => boolean = () => true): () => void {
     const input = (way: number) => {
       ;[this.lastInput, this.way] = [Date.now(), way]
     }
     const key = (event: unknown) => {
       const way = keyWay(event)
-      if (way !== 0) {
+      if (way !== 0 && acceptsKey(event)) {
         input(way)
       }
     }
@@ -278,6 +283,10 @@ export class MobileNativeChatPageMotion {
   }
 
   release(): void {
+    this.touching = false
+    this.pointing = false
+    this.lastReaderScroll = 0
+    this.own = []
     clearTimeout(this.later)
     clearTimeout(this.timer)
     this.timer = undefined

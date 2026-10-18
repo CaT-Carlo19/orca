@@ -2,6 +2,11 @@ import { Component, type RefObject } from 'react'
 import { Platform } from 'react-native'
 import { scrollWritesStopMomentum } from './mobile-native-chat-page-motion'
 import type { MobileNativeChatRowKeys } from './mobile-native-chat-row-keys'
+import {
+  mobileNativeChatReadingParts,
+  mobileNativeChatScrollRootKey,
+  type MobileNativeChatScrollRoots
+} from './mobile-native-chat-scroll-roots'
 
 type Box = { top: number; bottom: number }
 
@@ -19,6 +24,9 @@ export type MobileNativeChatScrollNode = Scroller
 type Unit = { key: string; top: number; member?: string; placed: string }
 
 type Props = {
+  children?: React.ReactNode
+  roots?: MobileNativeChatScrollRoots
+  runPlacements?: ReadonlyMap<string, string>
   rowKeys: Pick<MobileNativeChatRowKeys, 'scope' | 'sourceHead' | 'current' | 'placement'>
   /** How rows draw (tools shown, text size); a change regroups and re-lays them like a new source. */
   layoutKey?: string
@@ -62,7 +70,17 @@ function onScreen(box: Box, view: Box): boolean {
  *  or leave), else the row itself. */
 function unitsOf(row: Tagged, view: Box, self: Unit): Unit[] {
   const shown: Unit[] = []
-  for (const { id, node } of tagged(row, MEMBER)) {
+  const parts =
+    typeof Element !== 'undefined' && row instanceof Element
+      ? mobileNativeChatReadingParts(row).map((node) => ({
+          node,
+          id:
+            mobileNativeChatScrollRootKey(node) !== undefined
+              ? `root:${mobileNativeChatScrollRootKey(node)}`
+              : (node.getAttribute('data-testid')?.slice(MEMBER.length) ?? '')
+        }))
+      : tagged(row, MEMBER)
+  for (const { id, node } of parts) {
     const box = node.getBoundingClientRect()
     if (box.top >= view.bottom) {
       break
@@ -107,8 +125,16 @@ function placeOnScreen(scroller: Scroller, { placement }: Props['rowKeys']): Uni
  *  row's messages (an orphan result's line is its call's once paired); a run only in the row that
  *  kept its key; a row only while the same message places it, since a group keeps its key when the
  *  fold moves it. */
-function drawn(unit: Unit, rows: Map<string, Tagged>, keys: Props['rowKeys']): Tagged | undefined {
+function drawn(
+  unit: Unit,
+  rows: Map<string, Tagged>,
+  keys: Props['rowKeys'],
+  roots?: MobileNativeChatScrollRoots
+): Tagged | undefined {
   const { key, member } = unit
+  if (member?.startsWith('root:')) {
+    return roots?.frame(member.slice(5))
+  }
   if (member === undefined) {
     return keys.placement(key) === unit.placed ? rows.get(key) : undefined
   }
@@ -119,12 +145,22 @@ function drawn(unit: Unit, rows: Map<string, Tagged>, keys: Props['rowKeys']): T
 
 /** The update moves what the reader reads to another row (a line to another group, a row placed by
  *  another message): the browser's anchoring loses that node, so the hold puts it back. */
-function moves(unit: Unit | undefined, keys: Props['rowKeys']): boolean {
+function moves(
+  unit: Unit | undefined,
+  keys: Props['rowKeys'],
+  placements?: ReadonlyMap<string, string>,
+  roots?: MobileNativeChatScrollRoots
+): boolean {
   if (!unit) {
     return false
   }
   if (unit.member === undefined) {
     return keys.placement(unit.key) !== unit.placed
+  }
+  if (unit.member.startsWith('root:')) {
+    const owner = roots?.owner(unit.member.slice(5))
+    const now = owner === undefined ? undefined : placements?.get(owner)
+    return now !== undefined && now !== unit.placed
   }
   // An orphan result's line goes to its call's row once the call lands, and its old row stays.
   return (
@@ -148,12 +184,22 @@ function overscrolled({ scrollTop, scrollHeight, clientHeight }: Scroller): bool
  *  in the document. A native list holds its own place (`maintainVisibleContentPosition`). */
 export class MobileNativeChatScrollHold extends Component<Props> {
   getSnapshotBeforeUpdate(previous: Props): Unit[] | null {
+    const regrouped = previous.layoutKey !== this.props.layoutKey
+    const moved = new Set(
+      Array.from(previous.runPlacements ?? []).flatMap(([owner, row]) =>
+        this.props.runPlacements?.get(owner) !== row ? [owner] : []
+      )
+    )
+    if (Platform.OS === 'web' && previous.rowKeys.scope === this.props.rowKeys.scope) {
+      this.props.roots?.capture(moved, regrouped)
+    }
     // Another chat opens at its end, which the follow owner resets only after this reads it.
     if (
       Platform.OS !== 'web' ||
       previous.rowKeys.scope !== this.props.rowKeys.scope ||
       (previous.rowKeys.sourceHead === this.props.rowKeys.sourceHead &&
-        previous.layoutKey === this.props.layoutKey) ||
+        !regrouped &&
+        moved.size === 0) ||
       this.props.isFollowing()
     ) {
       return null
@@ -162,10 +208,11 @@ export class MobileNativeChatScrollHold extends Component<Props> {
     const scroller = list?.getScrollableNode()
     const held =
       scroller && !overscrolled(scroller) ? placeOnScreen(scroller, previous.rowKeys) : null
-    const regrouped = previous.layoutKey !== this.props.layoutKey
     if (
       !held ||
-      (!scrollWritesStopMomentum() && !regrouped && !moves(held[0], this.props.rowKeys))
+      (!scrollWritesStopMomentum() &&
+        !regrouped &&
+        !moves(held[0], this.props.rowKeys, this.props.runPlacements, this.props.roots))
     ) {
       return null
     }
@@ -173,15 +220,23 @@ export class MobileNativeChatScrollHold extends Component<Props> {
     return held
   }
 
+  componentDidMount(): void {
+    this.props.roots?.restoreAll()
+  }
+
   componentDidUpdate(previous: Props, _state: unknown, held: Unit[] | null): void {
-    if (!held) {
-      return
-    }
     try {
-      this.restore(held, previous.layoutKey !== this.props.layoutKey)
+      const regrouped = previous.layoutKey !== this.props.layoutKey
+      this.props.roots?.restoreAll(regrouped, false)
+      if (held) {
+        this.restore(held, regrouped)
+      }
     } finally {
+      this.props.roots?.releaseHold()
       // Whatever the correction did, the scroll goes back to its owner.
-      this.props.listRef.current?.holdPlace?.(false)
+      if (held) {
+        this.props.listRef.current?.holdPlace?.(false)
+      }
     }
   }
 
@@ -193,7 +248,7 @@ export class MobileNativeChatScrollHold extends Component<Props> {
     }
     const rows = new Map(tagged(scroller, ROW).map(({ id, node }) => [id, node]))
     for (const unit of held) {
-      const node = drawn(unit, rows, this.props.rowKeys)
+      const node = drawn(unit, rows, this.props.rowKeys, this.props.roots)
       if (node) {
         const drift = node.getBoundingClientRect().top - unit.top
         // Sub-pixel drift is layout noise; a write would stop iOS momentum for nothing.
@@ -207,7 +262,7 @@ export class MobileNativeChatScrollHold extends Component<Props> {
     }
   }
 
-  render(): null {
-    return null
+  render(): React.ReactNode {
+    return this.props.children ?? null
   }
 }

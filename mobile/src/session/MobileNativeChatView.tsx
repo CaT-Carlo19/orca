@@ -248,7 +248,6 @@ export function MobileNativeChatView({
       }),
     [messages, folded, streaming, pending, imagePreviewsByMessageId]
   )
-  const rowKeys = useMobileNativeChatRowKeys(folded, messages, sendSurfaceId)
   const tail = useMobileNativeChatTailFollow({ hasItems: data.length > 0, scopeKey: sendSurfaceId })
   const { jumpToTail, recordScrollMetrics, scrollMayLoadEarlier, pageSettled } = tail
 
@@ -302,10 +301,12 @@ export function MobileNativeChatView({
   })
 
   // What the reader opened in this chat's runs, kept above the rows the list recycles or windows out.
+  const rowKeys = useMobileNativeChatRowKeys(folded, messages, sendSurfaceId, turns.presentation)
   const disclosures = useMobileNativeChatDisclosures(sendSurfaceId)
   const taskListPredecessors = useMemo(() => nativeChatTaskListPredecessors(data), [data])
   const renderItem = useMobileNativeChatRowRenderer({
     rowKeyOf: rowKeys.keyOf,
+    runOwners: rowKeys.runOwners,
     toolsExpanded,
     taskListPredecessors,
     fontScale,
@@ -366,43 +367,49 @@ export function MobileNativeChatView({
       ) : (
         <GestureHandlerRootView style={styles.listWrap}>
           <MobileNativeChatDisclosureContext.Provider value={disclosures}>
-            <MobileNativeChatScrollHold {...{ rowKeys, layoutKey, ...tail.placeHold }} />
-            <GestureDetector gesture={pinchGesture}>
-              {Platform.OS === 'web' ? (
-                <MobileNativeChatPageList
-                  {...tail.pageListProps}
-                  rows={turns.listMessages}
-                  rowKeys={rowKeys}
-                  renderItem={renderItem}
-                  rowState={turns.resolveRow}
-                  contentContainerStyle={listContentStyle}
-                  {...{ footer, emptyStateView, onScroll, header: pageHeader, layoutKey }}
-                />
-              ) : (
-                <FlatList
-                  {...tail.listProps}
-                  data={turns.listMessages}
-                  keyExtractor={rowKeys.keyOf}
-                  renderItem={renderItem}
-                  contentContainerStyle={listContentStyle}
-                  // Let link/file taps land while the composer keyboard is up
-                  // instead of being swallowed by the dismiss gesture.
-                  keyboardShouldPersistTaps="handled"
-                  onScroll={onScroll}
-                  onScrollBeginDrag={tail.beginUserScroll}
-                  onScrollEndDrag={tail.endUserDrag}
-                  onMomentumScrollBegin={tail.beginMomentum}
-                  onMomentumScrollEnd={tail.endMomentum}
-                  scrollEventThrottle={32}
-                  onContentSizeChange={tail.pinToTailAfterContentResize}
-                  onLayout={tail.pinToTail}
-                  maintainVisibleContentPosition={mobileNativeChatRowAnchor(hasMore === true)}
-                  ListHeaderComponent={header}
-                  ListFooterComponent={footer}
-                  ListEmptyComponent={emptyStateView}
-                />
-              )}
-            </GestureDetector>
+            <MobileNativeChatScrollHold
+              {...{ rowKeys, layoutKey, ...tail.placeHold }}
+              roots={disclosures.roots}
+              runPlacements={rowKeys.runPlacements}
+            >
+              <GestureDetector gesture={pinchGesture}>
+                {Platform.OS === 'web' ? (
+                  <MobileNativeChatPageList
+                    {...tail.pageListProps}
+                    rows={turns.listMessages}
+                    rowKeys={rowKeys}
+                    roots={disclosures.roots}
+                    renderItem={renderItem}
+                    rowState={turns.resolveRow}
+                    contentContainerStyle={listContentStyle}
+                    {...{ footer, emptyStateView, onScroll, header: pageHeader, layoutKey }}
+                  />
+                ) : (
+                  <FlatList
+                    {...tail.listProps}
+                    data={turns.listMessages}
+                    keyExtractor={rowKeys.keyOf}
+                    renderItem={renderItem}
+                    contentContainerStyle={listContentStyle}
+                    // Let link/file taps land while the composer keyboard is up
+                    // instead of being swallowed by the dismiss gesture.
+                    keyboardShouldPersistTaps="handled"
+                    onScroll={onScroll}
+                    onScrollBeginDrag={tail.beginUserScroll}
+                    onScrollEndDrag={tail.endUserDrag}
+                    onMomentumScrollBegin={tail.beginMomentum}
+                    onMomentumScrollEnd={tail.endMomentum}
+                    scrollEventThrottle={32}
+                    onContentSizeChange={tail.pinToTailAfterContentResize}
+                    onLayout={tail.pinToTail}
+                    maintainVisibleContentPosition={mobileNativeChatRowAnchor(hasMore === true)}
+                    ListHeaderComponent={header}
+                    ListFooterComponent={footer}
+                    ListEmptyComponent={emptyStateView}
+                  />
+                )}
+              </GestureDetector>
+            </MobileNativeChatScrollHold>
           </MobileNativeChatDisclosureContext.Provider>
           <MobileNativeChatFloatingControls
             toolCallCount={toolCallCount}

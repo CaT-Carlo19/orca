@@ -1,5 +1,9 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import {
+  mobileNativeChatRunDescriptors,
+  type MobileNativeChatRunPresentation
+} from './mobile-native-chat-run-descriptors'
+import {
   isSubagentGroupBlock,
   isToolResultBlock,
   type NativeChatBlock,
@@ -22,15 +26,18 @@ export type MobileNativeChatRowKeys = {
   placement: (key: string) => string
 }
 
-type Sources = { identity: string[]; content: string[] }
+export type MobileNativeChatRowSources = { identity: string[]; content: string[] }
+type Sources = MobileNativeChatRowSources
 
-type Assigned = {
+export type MobileNativeChatAssignedRows = {
   rows: readonly NativeChatMessage[]
   messages: readonly NativeChatMessage[]
   keyById: ReadonlyMap<string, string>
   /** Each row's sources, when that render worked them out. */
   sources?: readonly Sources[]
+  prepareSources?: () => readonly Sources[]
 }
+type Assigned = MobileNativeChatAssignedRows
 
 /** The fold keeps its sources' block objects, so a block names the message it came from. */
 function blockOwners(messages: readonly NativeChatMessage[]): Map<NativeChatBlock, string> {
@@ -66,18 +73,43 @@ function sourcesOf(row: NativeChatMessage, owners: Map<NativeChatBlock, string>)
   return { identity, content: content.length > 0 ? content : identity }
 }
 
+/** Physical rows and displayed runs attribute against the same raw snapshot, only when needed. */
+export function prepareMobileNativeChatRowSources(messages: readonly NativeChatMessage[]) {
+  let owners: Map<NativeChatBlock, string> | undefined
+  const cache = new WeakMap<NativeChatMessage, Sources>()
+  return (row: NativeChatMessage): Sources => {
+    let sources = cache.get(row)
+    if (!sources) {
+      sources = sourcesOf(row, (owners ??= blockOwners(messages)))
+      cache.set(row, sources)
+    }
+    return sources
+  }
+}
+
 function sourcesByRow(
   rows: readonly NativeChatMessage[],
-  messages: readonly NativeChatMessage[]
+  messages: readonly NativeChatMessage[],
+  scopeOf?: (row: NativeChatMessage) => string | undefined
 ): Sources[] {
   const owners = blockOwners(messages)
-  return rows.map((row) => sourcesOf(row, owners))
+  return rows.map((row) => {
+    const sources = sourcesOf(row, owners)
+    if (!scopeOf) {
+      return sources
+    }
+    const scoped = (source: string) => `${source}\0${scopeOf(row) ?? ''}`
+    return { identity: sources.identity.map(scoped), content: sources.content.map(scoped) }
+  })
 }
 
 export function assignMobileNativeChatRowKeys(
   previous: Assigned | null,
   rows: readonly NativeChatMessage[],
-  messages: readonly NativeChatMessage[]
+  messages: readonly NativeChatMessage[],
+  fresh?: () => string,
+  scopeOf?: (row: NativeChatMessage) => string | undefined,
+  preparedSources?: () => readonly Sources[]
 ): Pick<Assigned, 'sources'> & {
   keyById: Map<string, string>
   moved: Map<string, string | undefined>
@@ -90,8 +122,12 @@ export function assignMobileNativeChatRowKeys(
   }
   const ids = new Set(rows.map((row) => row.id))
   let before: readonly Sources[] = []
-  let now: Sources[] | undefined
-  if (previous?.rows.every((row) => ids.has(row.id))) {
+  let now: readonly Sources[] | undefined
+  const current = () => (now ??= preparedSources?.() ?? sourcesByRow(rows, messages, scopeOf))
+  if (fresh) {
+    current()
+  }
+  if (!fresh && previous?.rows.every((row) => ids.has(row.id))) {
     // Nothing left: every row keeps its key.
     for (const row of rows) {
       const key = previous.keyById.get(row.id)
@@ -100,13 +136,18 @@ export function assignMobileNativeChatRowKeys(
       }
     }
   } else if (previous) {
-    before = previous.sources ?? sourcesByRow(previous.rows, previous.messages)
-    now = sourcesByRow(rows, messages)
+    before =
+      previous.sources ??
+      previous.prepareSources?.() ??
+      sourcesByRow(previous.rows, previous.messages)
+    current()
     const was = new Map<string, number>()
     before.forEach(({ identity }, at) => identity.forEach((source) => was.set(source, at)))
     // A row continues the one row its identity came from, if that row's went nowhere else. Two
     // would be one key for two rows, so neither inherits rather than one being picked by position.
-    const origins = now.map(({ identity }) => new Set(identity.flatMap((s) => was.get(s) ?? [])))
+    const origins = current().map(
+      ({ identity }) => new Set(identity.flatMap((s) => was.get(s) ?? []))
+    )
     const heirs = new Map<number, number>()
     origins.forEach((from) => from.forEach((at) => heirs.set(at, (heirs.get(at) ?? 0) + 1)))
     origins.forEach((from, at) => {
@@ -119,7 +160,7 @@ export function assignMobileNativeChatRowKeys(
     })
   }
   for (const row of rows.filter((unkeyed) => !keyById.has(unkeyed.id))) {
-    let key = row.id
+    let key = fresh?.() ?? row.id
     for (let n = 1; taken.has(key); n += 1) {
       key = `${row.id}~${n}`
     }
@@ -153,20 +194,54 @@ export function assignMobileNativeChatRowKeys(
 export function useMobileNativeChatRowKeys(
   rows: readonly NativeChatMessage[],
   messages: readonly NativeChatMessage[],
-  scope: string
-): MobileNativeChatRowKeys {
+  scope: string,
+  presentation?: MobileNativeChatRunPresentation
+): MobileNativeChatRowKeys & {
+  runOwners: ReadonlyMap<string, string>
+  runPlacements: ReadonlyMap<string, string>
+} {
   // Written at commit: a render React discards must not become the next one's last render.
-  const committed = useRef<(Assigned & { scope: string }) | null>(null)
+  const committed = useRef<
+    (Assigned & { scope: string; displayed: Assigned; serial: number }) | null
+  >(null)
   const assigned = useMemo(() => {
     const previous = committed.current?.scope === scope ? committed.current : null
-    return { scope, rows, messages, ...assignMobileNativeChatRowKeys(previous, rows, messages) }
-  }, [rows, messages, scope])
+    const sourceOf = prepareMobileNativeChatRowSources(messages)
+    const prepareSources = () => rows.map(sourceOf)
+    const physical = assignMobileNativeChatRowKeys(
+      previous,
+      rows,
+      messages,
+      undefined,
+      undefined,
+      prepareSources
+    )
+    const runs = presentation ? mobileNativeChatRunDescriptors(presentation, sourceOf) : []
+    const heads = runs.map((run) => run.row)
+    let serial = previous?.serial ?? 0
+    const displayed = {
+      rows: heads,
+      messages,
+      ...assignMobileNativeChatRowKeys(
+        previous?.displayed ?? null,
+        heads,
+        messages,
+        () => `display-run:${serial++}`,
+        undefined,
+        () => runs.map((run) => run.sources)
+      )
+    }
+    const runPlacements = new Map(Array.from(displayed.keyById, ([row, owner]) => [owner, row]))
+    return { scope, rows, messages, prepareSources, ...physical, displayed, serial, runPlacements }
+  }, [rows, messages, scope, presentation])
   useLayoutEffect(() => {
     committed.current = assigned
   }, [assigned])
   return useMemo(() => {
     let idByKey: Map<string, string> | undefined
     return {
+      runOwners: assigned.displayed.keyById,
+      runPlacements: assigned.runPlacements,
       scope: assigned.scope,
       sourceHead: assigned.messages[0]?.id,
       keyOf: (message: NativeChatMessage) => assigned.keyById.get(message.id) ?? message.id,

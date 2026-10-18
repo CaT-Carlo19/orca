@@ -1,4 +1,5 @@
 type Scroller = { getBoundingClientRect: () => { top: number }; scrollTop: number }
+import { mobileNativeChatScrollFrame } from './mobile-native-chat-scroll-roots'
 
 function isElement(node: unknown): node is Element {
   return typeof Element !== 'undefined' && node instanceof Element
@@ -13,7 +14,7 @@ function partAtTop(row: Element, view: number): Element {
     const box = child.getBoundingClientRect()
     if (box.bottom <= view || box.height === 0) {
       child = child.nextElementSibling
-    } else if (box.top >= view) {
+    } else if (mobileNativeChatScrollFrame(child, row) || box.top >= view) {
       return child
     } else {
       part = child

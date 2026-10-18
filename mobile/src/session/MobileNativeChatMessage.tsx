@@ -49,6 +49,7 @@ import { Prose } from './MobileNativeChatProse'
 function MobileNativeChatMessageImpl({
   message,
   rowKey,
+  runOwner,
   mayStillGrow = false,
   toolsExpanded = false,
   previousTodoWrite,
@@ -81,6 +82,7 @@ function MobileNativeChatMessageImpl({
   message: NativeChatMessage
   /** The row's place on the page, kept while older messages join it; tags the row. */
   rowKey?: string
+  runOwner?: string
   /** The newest assistant row of a live turn with no prompt open: its last text may still grow. */
   mayStillGrow?: boolean
   toolsExpanded?: boolean
@@ -342,7 +344,7 @@ function MobileNativeChatMessageImpl({
               // default every run and line reads, and a reader's own choice is kept per default.
               defaultExpanded={toolsExpanded}
               expandChildren={toolsExpanded}
-              disclosureId={rowKey ?? message.id}
+              disclosureId={runOwner ?? rowKey ?? message.id}
               asides={asides}
               activeTurnIsWorking={structuredActivityUi ? activeTurnIsWorking : undefined}
               trailing={trailingRun}

@@ -1,6 +1,4 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { NativeChatMessage } from '../../../src/shared/native-chat-types'
-import type { MobileNativeChatRowKeys } from './mobile-native-chat-row-keys'
 import { MobileNativeChatPageHeights } from './mobile-native-chat-page-heights'
 import { MobileNativeChatPageAnchoring } from './mobile-native-chat-page-anchoring'
 import {
@@ -13,7 +11,7 @@ import { coverMobileNativeChatWindow } from './mobile-native-chat-page-window-co
 import type {
   MobileNativeChatWindowDrawn as Drawn,
   MobileNativeChatWindowGroup as Group,
-  MobileNativeChatWindowRowState as RowState,
+  MobileNativeChatPageWindowArgs,
   MobileNativeChatWindowScroller,
   MobileNativeChatWindowSeat as Win
 } from './mobile-native-chat-page-window-state'
@@ -34,17 +32,8 @@ const STREAM_PAUSE_MS = 300
 /** The page's rows near the screen, keyed. Above the window the spacer stands only for measured rows:
  *  rows never measured are left out, and are measured in place only while nothing can move the
  *  reader (following, or settled), because iOS stops momentum on any scroll write. */
-export function useMobileNativeChatPageWindow(args: {
-  rows: readonly NativeChatMessage[]
-  rowKeys: Pick<MobileNativeChatRowKeys, 'scope' | 'sourceHead' | 'keyOf' | 'current'>
-  rowState: RowState
-  following: boolean
-  /** At event time, before a re-render lands. */
-  isFollowing: () => boolean
-  layoutKey: string
-  scroller: () => MobileNativeChatWindowScroller | null | undefined
-}) {
-  const { rows, rowKeys, rowState, following, isFollowing, layoutKey, scroller } = args
+export function useMobileNativeChatPageWindow(args: MobileNativeChatPageWindowArgs) {
+  const { rows, rowKeys, rowState, following, isFollowing, layoutKey, scroller, roots } = args
   const render = useMobileNativeChatPageRender()
   const [heights] = useState(() => new MobileNativeChatPageHeights())
   const w = useRef<Win | null>(null)
@@ -268,7 +257,7 @@ export function useMobileNativeChatPageWindow(args: {
       s.removeEventListener('scroll', scrolled)
       motion.release()
     }
-  }, [scroller, motion, takeAnchor, cover, drawnRows, anchoring])
+  }, [scroller, motion, takeAnchor, cover, drawnRows, anchoring, roots])
 
   /** The one observer's entries: rows measured, then, for a parked reader (on WebKit at rest),
    *  whatever moved the row they were reading goes back (a measured row, the header, given-back
@@ -291,6 +280,7 @@ export function useMobileNativeChatPageWindow(args: {
         }
       }
       // As of the layout, before a move no scroll event has reported yet is counted.
+      roots?.restoreAll()
       const own = !at.following && motion.mayCorrect() && pageKeepsPlace(s.scrollTop)
       const shift = own ? drawnRows.placeShift(s) : null
       const max = s.scrollHeight - s.clientHeight
@@ -307,7 +297,7 @@ export function useMobileNativeChatPageWindow(args: {
       cover(s)
       motion.poke()
     },
-    [scroller, heights, motion, write, cover, drawnRows, takeAnchor]
+    [scroller, heights, motion, write, cover, drawnRows, takeAnchor, roots]
   )
 
   /** The place-hold's correction, when one may be written: on WebKit only at rest (mid-motion the
@@ -329,8 +319,11 @@ export function useMobileNativeChatPageWindow(args: {
     () => ({
       afterResize,
       keepInPlace,
-      observeWith: drawnRows.observeWith,
-      settled: () => motion.whenSettled(),
+      observeWith: (observer: ResizeObserver | null) => {
+        drawnRows.observeWith(observer)
+        roots?.observeWith(observer)
+      },
+      settled: () => roots?.settled(motion) ?? motion.whenSettled(),
       syncAnchoring: () => anchoring.sync(),
       holdPlace: (on: boolean) => anchoring.hold(on),
       watchMotion: (fn: typeof motion.onMotion) => {
@@ -338,7 +331,7 @@ export function useMobileNativeChatPageWindow(args: {
       },
       wrote: (target: number) => motion.wrote(target)
     }),
-    [afterResize, keepInPlace, drawnRows, motion, anchoring]
+    [afterResize, keepInPlace, drawnRows, motion, anchoring, roots]
   )
 
   return {
