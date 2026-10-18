@@ -13,6 +13,7 @@ import type { SshConnectionState } from '../../../../shared/ssh-types'
 import type { TaskSourceContext } from '../../../../shared/task-source-context'
 import type { ProjectHostSetup } from '../../../../shared/project-types'
 import type { Repo } from '../../../../shared/repo-types'
+import { TASK_SOURCE_PROVIDER_LABEL } from '../task-source-provider-labels'
 import type { RuntimeEnvironmentStatus } from '../../../../shared/runtime-host-status'
 import type { Worktree } from '../../../../shared/worktree/types'
 import type { TaskSourceHostAvailability } from '../task-source-context-summary'
@@ -256,16 +257,8 @@ function getAutomationSourceAvailability(
   return null
 }
 
-const AUTOMATION_SOURCE_PROVIDER_LABEL: Record<TaskSourceContext['provider'], string> = {
-  local: 'Local',
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  linear: 'Linear',
-  jira: 'Jira'
-}
-
 function getAutomationSourceProviderLabel(provider: TaskSourceContext['provider']): string {
-  return AUTOMATION_SOURCE_PROVIDER_LABEL[provider]
+  return TASK_SOURCE_PROVIDER_LABEL[provider]
 }
 
 export function getRuntimeAutomationAvailability(

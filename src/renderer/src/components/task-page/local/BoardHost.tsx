@@ -13,7 +13,6 @@ export function TaskPageLocalBoardHost({
     localTasksLoading,
     localTasksError,
     localTaskSourceProjectId,
-    setLocalTasksRefreshNonce,
     setLocalTaskDialog,
     setSelectedLocalTask,
     openLocalDetailPage
@@ -25,7 +24,7 @@ export function TaskPageLocalBoardHost({
   const handleMove = (task: LocalTask, status: LocalTaskStatus): void => {
     setSelectedLocalTask(task)
     void moveLocalTask(task, status).catch(() => {
-      // Rollback + toast already handled in the mutation; the board keeps stale state visible.
+      // Rollback already handled in the mutation; the board keeps stale state visible on failure.
     })
   }
 
@@ -36,7 +35,6 @@ export function TaskPageLocalBoardHost({
       unreadable={unreadable}
       hasProject={hasProject}
       onRetry={() => {
-        setLocalTasksRefreshNonce((nonce) => nonce + 1)
         void refreshLocalTasks()
       }}
       onCreate={() => setLocalTaskDialog({ mode: 'create' })}
@@ -53,7 +51,6 @@ export function TaskPageLocalBoardHost({
         setSelectedLocalTask(task)
         openLocalDetailPage(task)
       }}
-      pendingIds={new Set()}
     />
   )
 }

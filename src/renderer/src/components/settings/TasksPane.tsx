@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Github, Gitlab } from 'lucide-react'
+import { Github, Gitlab, List } from 'lucide-react'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { TaskProvider } from '../../../../shared/task-providers'
 import {
@@ -53,7 +53,7 @@ const PROVIDER_META: Record<
         'Track tasks per project without connecting an integration.'
       )
     },
-    Icon: ({ className }) => <LinearIcon className={className} />
+    Icon: ({ className }) => <List className={className} />
   },
   github: {
     get label() {

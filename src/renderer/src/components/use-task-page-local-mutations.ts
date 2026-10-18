@@ -10,34 +10,31 @@ import {
 type LocalMutationsInput = {
   taskSource: string
   localTaskSourceProjectId: string | null
-  localTasks: LocalTask[]
-  setLocalTasks: (tasks: LocalTask[]) => void
+  setLocalTasks: (updater: (tasks: LocalTask[]) => LocalTask[]) => void
   setLocalTasksLoading: (loading: boolean) => void
   setLocalTasksError: (error: string | null) => void
-  setLocalTasksRefreshNonce: (updater: (nonce: number) => number) => void
   setLocalTaskDialog: (dialog: null) => void
 }
 
 function isRevisionConflict(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'revision-conflict'
-  )
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false
+  }
+  const code = (error as { code?: unknown }).code
+  // Canonical code is 'profile-state-revision-conflict'; accept the short
+  // form too since IPC serialization may drop custom error classes.
+  return code === 'profile-state-revision-conflict' || code === 'revision-conflict'
 }
 
-// Why single retry: two racing writers converge on the second attempt; a
-// hotter domain means a real contention loop the UI must surface, not spin on.
+// Why single refresh path: the loading hook owns re-listing, so mutations
+// patch state locally from the returned row and only re-list on conflict.
 export function useTaskPageLocalMutations(model: LocalMutationsInput) {
   const {
     taskSource,
     localTaskSourceProjectId,
-    localTasks,
     setLocalTasks,
     setLocalTasksLoading,
     setLocalTasksError,
-    setLocalTasksRefreshNonce,
     setLocalTaskDialog
   } = model
 
@@ -48,7 +45,8 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
     setLocalTasksLoading(true)
     setLocalTasksError(null)
     try {
-      setLocalTasks(await listLocalTasks(localTaskSourceProjectId))
+      const tasks = await listLocalTasks(localTaskSourceProjectId)
+      setLocalTasks(() => tasks)
     } catch (error: unknown) {
       setLocalTasksError(error instanceof Error ? error.message : 'Failed to load local tasks')
     } finally {
@@ -68,12 +66,11 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
         throw new Error('No active project for local tasks')
       }
       const created = await createLocalTask({ projectId: localTaskSourceProjectId, ...input })
-      setLocalTasksRefreshNonce((nonce) => nonce + 1)
+      setLocalTasks((previous) => [...previous, created].sort((left, right) => left.id - right.id))
       setLocalTaskDialog(null)
-      await refreshLocalTasks()
       return created
     },
-    [localTaskSourceProjectId, refreshLocalTasks, setLocalTaskDialog, setLocalTasksRefreshNonce]
+    [localTaskSourceProjectId, setLocalTasks, setLocalTaskDialog]
   )
 
   const moveLocalTask = useCallback(
@@ -81,16 +78,25 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
       if (!localTaskSourceProjectId) {
         throw new Error('No active project for local tasks')
       }
-      const previous = localTasks
       const optimistic: LocalTask = { ...task, status, updatedAt: Date.now() }
-      setLocalTasks(localTasks.map((entry) => (entry.id === task.id ? optimistic : entry)))
+      let previous: LocalTask[] = []
+      setLocalTasks((current) => {
+        previous = current
+        return current.map((entry) => (entry.id === task.id ? optimistic : entry))
+      })
       try {
         const updated = await updateLocalTask({
           projectId: localTaskSourceProjectId,
           id: task.id,
           status
         })
-        return updated ?? optimistic
+        if (updated) {
+          setLocalTasks((current) =>
+            current.map((entry) => (entry.id === task.id ? updated : entry))
+          )
+          return updated
+        }
+        return optimistic
       } catch (error: unknown) {
         if (isRevisionConflict(error)) {
           try {
@@ -99,17 +105,22 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
               id: task.id,
               status
             })
+            if (retried) {
+              setLocalTasks((current) =>
+                current.map((entry) => (entry.id === task.id ? retried : entry))
+              )
+            }
             return retried ?? optimistic
           } catch (retryError: unknown) {
-            setLocalTasks(previous)
+            setLocalTasks(() => previous)
             throw retryError
           }
         }
-        setLocalTasks(previous)
+        setLocalTasks(() => previous)
         throw error
       }
     },
-    [localTaskSourceProjectId, localTasks, setLocalTasks]
+    [localTaskSourceProjectId, setLocalTasks]
   )
 
   const editLocalTask = useCallback(
@@ -128,11 +139,11 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
         ...(patch.status !== undefined ? { status: patch.status } : {})
       })
       if (updated) {
-        setLocalTasks(localTasks.map((entry) => (entry.id === task.id ? updated : entry)))
+        setLocalTasks((current) => current.map((entry) => (entry.id === task.id ? updated : entry)))
       }
       return updated
     },
-    [localTaskSourceProjectId, localTasks, setLocalTasks]
+    [localTaskSourceProjectId, setLocalTasks]
   )
 
   const deleteLocalTaskMutation = useCallback(
@@ -142,11 +153,11 @@ export function useTaskPageLocalMutations(model: LocalMutationsInput) {
       }
       const ok = await deleteLocalTask(localTaskSourceProjectId, task.id)
       if (ok) {
-        setLocalTasks(localTasks.filter((entry) => entry.id !== task.id))
+        setLocalTasks((current) => current.filter((entry) => entry.id !== task.id))
       }
       return ok
     },
-    [localTaskSourceProjectId, localTasks, setLocalTasks]
+    [localTaskSourceProjectId, setLocalTasks]
   )
 
   return {

@@ -104,7 +104,6 @@ export function useTaskPageProviderState(model: TaskPageSourceAvailabilityModel)
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([])
   const [localTasksLoading, setLocalTasksLoading] = useState(false)
   const [localTasksError, setLocalTasksError] = useState<string | null>(null)
-  const [localTasksRefreshNonce, setLocalTasksRefreshNonce] = useState(0)
   const [localTaskDialog, setLocalTaskDialog] = useState<
     | { mode: 'create' }
     | { mode: 'edit'; task: LocalTask }
@@ -152,8 +151,6 @@ export function useTaskPageProviderState(model: TaskPageSourceAvailabilityModel)
     setLocalTasksLoading: typeof setLocalTasksLoading
     localTasksError: typeof localTasksError
     setLocalTasksError: typeof setLocalTasksError
-    localTasksRefreshNonce: typeof localTasksRefreshNonce
-    setLocalTasksRefreshNonce: typeof setLocalTasksRefreshNonce
     localTaskDialog: typeof localTaskDialog
     setLocalTaskDialog: typeof setLocalTaskDialog
   }
@@ -196,8 +193,6 @@ export function useTaskPageProviderState(model: TaskPageSourceAvailabilityModel)
   nextModel.setLocalTasksLoading = setLocalTasksLoading
   nextModel.localTasksError = localTasksError
   nextModel.setLocalTasksError = setLocalTasksError
-  nextModel.localTasksRefreshNonce = localTasksRefreshNonce
-  nextModel.setLocalTasksRefreshNonce = setLocalTasksRefreshNonce
   nextModel.localTaskDialog = localTaskDialog
   nextModel.setLocalTaskDialog = setLocalTaskDialog
   return nextModel

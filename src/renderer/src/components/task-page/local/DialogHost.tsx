@@ -18,6 +18,11 @@ export function TaskPageLocalDialogHost({
     model.localTasks.find((entry) => entry.id === id) ?? null
   return (
     <TaskPageLocalDialog
+      key={
+        localTaskDialog.mode === 'edit' || localTaskDialog.mode === 'delete'
+          ? `${localTaskDialog.mode}-${localTaskDialog.task.id}`
+          : 'create'
+      }
       dialog={localTaskDialog}
       onClose={close}
       onCreate={async (input) => createLocalTask(input)}

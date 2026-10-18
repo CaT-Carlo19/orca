@@ -56,7 +56,8 @@ export class LocalTaskPersistence {
       createdAt: now,
       updatedAt: now
     }
-    const tasks = [...bucket.tasks, task].sort((left, right) => left.id - right.id)
+    // Why no sort: ids allocate monotonically past the max, so append order is already sorted.
+    const tasks = [...bucket.tasks, task]
     runtime.state.localTasksByProject = {
       ...runtime.state.localTasksByProject,
       [projectId]: { tasks, nextLocalTaskId: id + 1 }
@@ -102,15 +103,16 @@ export class LocalTaskPersistence {
   deleteLocalTask(projectId: string, id: number): boolean {
     const { runtime, scheduling } = this[localTaskPersistenceContext]
     const bucket = runtime.state.localTasksByProject?.[projectId]
-    if (!bucket || !bucket.tasks.some((task) => task.id === id)) {
+    if (!bucket) {
+      return false
+    }
+    const tasks = bucket.tasks.filter((task) => task.id !== id)
+    if (tasks.length === bucket.tasks.length) {
       return false
     }
     runtime.state.localTasksByProject = {
       ...runtime.state.localTasksByProject,
-      [projectId]: {
-        tasks: bucket.tasks.filter((task) => task.id !== id),
-        nextLocalTaskId: bucket.nextLocalTaskId
-      }
+      [projectId]: { tasks, nextLocalTaskId: bucket.nextLocalTaskId }
     }
     scheduleSave(scheduling, ['localTasksByProject'])
     return true
@@ -123,6 +125,10 @@ export class LocalTaskPersistence {
     const { runtime, scheduling } = this[localTaskPersistenceContext]
     const current = normalizeLocalTasksByProject(runtime.state.localTasksByProject) ?? {}
     const known = new Set(knownProjectIds)
+    // Why early return: no-op prune must not touch state or schedule a save.
+    if (Object.keys(current).every((projectId) => known.has(projectId))) {
+      return
+    }
     const next: Record<string, (typeof current)[string]> = {}
     for (const [projectId, bucket] of Object.entries(current)) {
       if (known.has(projectId)) {

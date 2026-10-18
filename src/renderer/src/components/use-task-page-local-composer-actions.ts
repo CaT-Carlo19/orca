@@ -37,7 +37,10 @@ export function useTaskPageLocalComposerActions(model: LocalComposerModel) {
         url: task.url
       }
       const eligibleRepos = (model.repos ?? []).filter((repo) => repo.path)
-      const activeRepoId = useAppStore.getState().activeRepoId
+      const { activeRepoId, projectHostSetups } = useAppStore.getState()
+      // Why repo.path, not the shared git-kind selector: a local task needs any
+      // writable checkout for its worktree, including non-git folders the
+      // task-source pickers hide.
       const defaultRepo =
         eligibleRepos.find((repo) => repo.id === activeRepoId) ?? eligibleRepos[0] ?? null
       openModal('new-workspace-composer', {
@@ -45,10 +48,7 @@ export function useTaskPageLocalComposerActions(model: LocalComposerModel) {
         taskSourceContext: localTaskSourceContext,
         initialRepoId: defaultRepo?.id,
         initialWorkspaceTarget: defaultRepo
-          ? getRepoWorkspaceCreationTargetHint(
-              defaultRepo,
-              useAppStore.getState().projectHostSetups
-            )
+          ? getRepoWorkspaceCreationTargetHint(defaultRepo, projectHostSetups)
           : undefined,
         prefilledName: getLinkedWorkItemSuggestedName(task),
         telemetrySource: 'sidebar'

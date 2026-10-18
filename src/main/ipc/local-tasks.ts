@@ -38,8 +38,6 @@ export function registerLocalTaskHandlers(store: Store): void {
   ipcMain.removeHandler('local-tasks:create')
   ipcMain.removeHandler('local-tasks:update')
   ipcMain.removeHandler('local-tasks:delete')
-  ipcMain.removeHandler('local-tasks:prune')
-
   ipcMain.handle('local-tasks:list', (_event, rawArgs?: unknown) => {
     const args = parse(ListArgs, rawArgs)
     return store.listLocalTasks(args.projectId)
@@ -65,9 +63,5 @@ export function registerLocalTaskHandlers(store: Store): void {
   ipcMain.handle('local-tasks:delete', (_event, rawArgs?: unknown) => {
     const args = parse(DeleteArgs, rawArgs)
     return store.deleteLocalTask(args.projectId, args.id)
-  })
-  ipcMain.handle('local-tasks:prune', (_event, rawArgs?: unknown) => {
-    const args = parse(z.object({ knownProjectIds: z.array(z.string()) }), rawArgs)
-    store.pruneLocalTasksForRemovedProjects(args.knownProjectIds)
   })
 }

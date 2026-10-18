@@ -30,11 +30,16 @@ export function loadLocalTaskViewState(): LocalTaskViewState {
     if (groupBy !== 'status' || orderBy !== 'created') {
       return DEFAULT_VIEW_STATE
     }
-    return { groupBy: 'status', orderBy: 'created' }
+    return DEFAULT_VIEW_STATE
   } catch {
     return DEFAULT_VIEW_STATE
   }
 }
+
 export function saveLocalTaskViewState(state: LocalTaskViewState): void {
-  localStorage.setItem(LOCAL_TASK_VIEW_PREFS_KEY, JSON.stringify(state))
+  try {
+    localStorage.setItem(LOCAL_TASK_VIEW_PREFS_KEY, JSON.stringify(state))
+  } catch {
+    // The live view stays usable when browser storage is unavailable or full.
+  }
 }

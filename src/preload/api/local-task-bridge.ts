@@ -8,6 +8,5 @@ export const localTaskApiBridge = {
   update: (args: Parameters<LocalTaskApi['update']>[0]) =>
     ipcRenderer.invoke('local-tasks:update', args),
   remove: (args: { projectId: string; id: number }) =>
-    ipcRenderer.invoke('local-tasks:delete', args),
-  prune: (args: { knownProjectIds: string[] }) => ipcRenderer.invoke('local-tasks:prune', args)
+    ipcRenderer.invoke('local-tasks:delete', args)
 } satisfies LocalTaskApi

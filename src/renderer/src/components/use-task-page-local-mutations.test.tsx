@@ -29,24 +29,24 @@ vi.mock('@/runtime/runtime-local-task-client', () => ({
 }))
 
 function setup(tasks: LocalTask[] = [TASK]) {
-  const setLocalTasks = vi.fn()
+  let current = [...tasks]
+  const setLocalTasks = vi.fn((updater: (previous: LocalTask[]) => LocalTask[]) => {
+    current = updater(current)
+  })
   const setLocalTasksLoading = vi.fn()
   const setLocalTasksError = vi.fn()
-  const setLocalTasksRefreshNonce = vi.fn()
   const setLocalTaskDialog = vi.fn()
   const { result } = renderHook(() =>
     useTaskPageLocalMutations({
       taskSource: 'local',
       localTaskSourceProjectId: 'p',
-      localTasks: tasks,
       setLocalTasks,
       setLocalTasksLoading,
       setLocalTasksError,
-      setLocalTasksRefreshNonce,
       setLocalTaskDialog
     })
   )
-  return { result, setLocalTasks, setLocalTasksLoading, setLocalTasksError, setLocalTaskDialog }
+  return { result, setLocalTasks, getCurrent: () => current }
 }
 
 beforeEach(() => {
@@ -68,13 +68,11 @@ describe('useTaskPageLocalMutations', () => {
 
   it('moves a task with optimistic patch and rolls back on failure', async () => {
     clientMocks.update.mockRejectedValueOnce(new Error('boom'))
-    const { result, setLocalTasks } = setup()
+    const { result, getCurrent } = setup()
     await act(async () => {
       await expect(result.current.moveLocalTask(TASK, 'done')).rejects.toThrow('boom')
     })
-    const calls = setLocalTasks.mock.calls.map((call) => call[0] as LocalTask[])
-    expect(calls[0][0].status).toBe('done')
-    expect(calls.at(-1)).toEqual([TASK])
+    expect(getCurrent()).toEqual([TASK])
   })
 
   it('retries a move once on revision conflict then rolls back', async () => {
@@ -93,12 +91,12 @@ describe('useTaskPageLocalMutations', () => {
 
   it('deletes a task and prunes it from the list', async () => {
     clientMocks.remove.mockResolvedValue(true)
-    const { result, setLocalTasks } = setup()
+    const { result, getCurrent } = setup()
     let ok = false
     await act(async () => {
       ok = await result.current.deleteLocalTask(TASK)
     })
     expect(ok).toBe(true)
-    expect(setLocalTasks).toHaveBeenCalledWith([])
+    expect(getCurrent()).toEqual([])
   })
 })

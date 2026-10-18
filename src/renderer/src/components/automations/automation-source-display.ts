@@ -1,5 +1,6 @@
 import { getExecutionHostLabel } from '../../../../shared/execution-host'
 import type { TaskSourceContext } from '../../../../shared/task-source-context'
+import { TASK_SOURCE_PROVIDER_LABEL } from '../task-source-provider-labels'
 
 export type AutomationSourceDisplay = {
   label: string
@@ -31,16 +32,8 @@ export function getAutomationSourceDisplay(
   return { label, title }
 }
 
-const PROVIDER_LABEL: Record<TaskSourceContext['provider'], string> = {
-  local: 'Local',
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  linear: 'Linear',
-  jira: 'Jira'
-}
-
 function getProviderLabel(provider: TaskSourceContext['provider']): string {
-  return PROVIDER_LABEL[provider]
+  return TASK_SOURCE_PROVIDER_LABEL[provider]
 }
 
 function getSourceIdentityLabel(sourceContext: TaskSourceContext): string | null {

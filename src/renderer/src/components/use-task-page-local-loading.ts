@@ -1,24 +1,20 @@
-import type { TaskPageProviderStateModel } from './use-task-page-provider-state'
 import { useEffect } from 'react'
+import type { LocalTask } from '../../../shared/local-task'
 import { listLocalTasks } from '@/runtime/runtime-local-task-client'
 
-type LocalLoadingInput = Pick<
-  TaskPageProviderStateModel,
-  | 'taskSource'
-  | 'localTaskSourceProjectId'
-  | 'localTasksRefreshNonce'
-  | 'setLocalTasks'
-  | 'setLocalTasksLoading'
-  | 'setLocalTasksError'
->
-
+type LocalLoadingInput = {
+  taskSource: string
+  localTaskSourceProjectId: string | null
+  setLocalTasks: (updater: (tasks: LocalTask[]) => LocalTask[]) => void
+  setLocalTasksLoading: (loading: boolean) => void
+  setLocalTasksError: (error: string | null) => void
+}
 // Why keyed on project id: switching projects must clear the previous
 // project's tasks before the new load lands, or the board flashes stale rows.
 export function useTaskPageLocalLoading<Model extends LocalLoadingInput>(model: Model): Model {
   const {
     taskSource,
     localTaskSourceProjectId,
-    localTasksRefreshNonce,
     setLocalTasks,
     setLocalTasksLoading,
     setLocalTasksError
@@ -28,13 +24,13 @@ export function useTaskPageLocalLoading<Model extends LocalLoadingInput>(model: 
       return
     }
     if (!localTaskSourceProjectId) {
-      setLocalTasks([])
+      setLocalTasks(() => [])
       setLocalTasksLoading(false)
       setLocalTasksError(null)
       return
     }
     let cancelled = false
-    setLocalTasks([])
+    setLocalTasks(() => [])
     setLocalTasksLoading(true)
     setLocalTasksError(null)
     listLocalTasks(localTaskSourceProjectId).then(
@@ -42,14 +38,14 @@ export function useTaskPageLocalLoading<Model extends LocalLoadingInput>(model: 
         if (cancelled) {
           return
         }
-        setLocalTasks(tasks)
+        setLocalTasks(() => tasks)
         setLocalTasksLoading(false)
       },
       (error: unknown) => {
         if (cancelled) {
           return
         }
-        setLocalTasks([])
+        setLocalTasks(() => [])
         setLocalTasksLoading(false)
         setLocalTasksError(error instanceof Error ? error.message : 'Failed to load local tasks')
       }
@@ -60,7 +56,6 @@ export function useTaskPageLocalLoading<Model extends LocalLoadingInput>(model: 
   }, [
     taskSource,
     localTaskSourceProjectId,
-    localTasksRefreshNonce,
     setLocalTasks,
     setLocalTasksLoading,
     setLocalTasksError

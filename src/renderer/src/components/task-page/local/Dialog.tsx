@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { LocalTask, LocalTaskStatus } from '../../../../../shared/local-task'
-import { LOCAL_TASK_STATUSES } from '../../../../../shared/local-task'
+import { LOCAL_TASK_STATUSES, LOCAL_TASK_STATUS_LABELS } from '../../../../../shared/local-task'
 import { translate } from '@/i18n/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,12 +27,6 @@ export type TaskPageLocalDialogProps = {
     patch: { title?: string; description?: string; status?: LocalTaskStatus }
   ) => Promise<LocalTask | null>
   onDeleteConfirm: (task: LocalTask) => Promise<boolean>
-}
-
-const STATUS_LABELS: Record<LocalTaskStatus, string> = {
-  todo: 'To do',
-  'in-progress': 'In progress',
-  done: 'Done'
 }
 
 export function TaskPageLocalDialog({
@@ -160,7 +154,7 @@ export function TaskPageLocalDialog({
               >
                 {LOCAL_TASK_STATUSES.map((option) => (
                   <option key={option} value={option}>
-                    {STATUS_LABELS[option]}
+                    {LOCAL_TASK_STATUS_LABELS[option]}
                   </option>
                 ))}
               </select>

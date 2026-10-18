@@ -1,4 +1,5 @@
 import { getLinearOrganizationUrlKeyFromIssueUrl } from '../linear/links'
+import { LOCAL_TASK_URL_PREFIX } from '../local-tasks'
 import type { FolderWorkspaceLinkedTask } from '../folder-workspace-types'
 import type { JiraIssue } from '../jira-types'
 import type { LinearIssue } from '../linear/issue-types'
@@ -102,7 +103,7 @@ export function getWorkspaceSourceProvider(item: WorkspaceSourceItemLike): Works
 }
 
 function isLocalTaskUrl(url: string): boolean {
-  return url.startsWith('orca://local-task/v1/')
+  return url.startsWith(LOCAL_TASK_URL_PREFIX)
 }
 
 export function buildGitHubWorkspaceSource(item: {
@@ -203,29 +204,26 @@ export function buildWorkspaceSourceSelection(args: {
     return baseBranch ? { kind: 'branch', label: baseBranch } : null
   }
   const provider = getWorkspaceSourceProvider(linkedWorkItem)
-  const kind: WorkspaceSourceSelectionKind =
-    provider === 'local'
-      ? 'local'
-      : provider === 'linear'
-        ? 'linear'
-        : provider === 'jira'
-          ? 'jira'
-          : provider === 'gitlab'
-            ? linkedWorkItem.type === 'mr'
-              ? 'gitlab-mr'
-              : 'gitlab-issue'
-            : linkedWorkItem.type === 'pr'
-              ? 'github-pr'
-              : 'github-issue'
+  if (provider === 'local') {
+    return { kind: 'local', label: linkedWorkItem.title, url: linkedWorkItem.url }
+  }
+  if (provider === 'linear' || provider === 'jira' || linkedWorkItem.number === 0) {
+    return {
+      kind: provider === 'linear' ? 'linear' : 'jira',
+      label: linkedWorkItem.title,
+      url: linkedWorkItem.url
+    }
+  }
+  if (provider === 'gitlab') {
+    return {
+      kind: linkedWorkItem.type === 'mr' ? 'gitlab-mr' : 'gitlab-issue',
+      label: `#${linkedWorkItem.number} ${linkedWorkItem.title}`,
+      url: linkedWorkItem.url
+    }
+  }
   return {
-    kind,
-    label:
-      provider === 'local' ||
-      provider === 'linear' ||
-      provider === 'jira' ||
-      linkedWorkItem.number === 0
-        ? linkedWorkItem.title
-        : `#${linkedWorkItem.number} ${linkedWorkItem.title}`,
+    kind: linkedWorkItem.type === 'pr' ? 'github-pr' : 'github-issue',
+    label: `#${linkedWorkItem.number} ${linkedWorkItem.title}`,
     url: linkedWorkItem.url
   }
 }

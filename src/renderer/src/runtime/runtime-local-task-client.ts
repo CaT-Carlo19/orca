@@ -1,8 +1,4 @@
 import type { LocalTask, LocalTaskStatus } from '../../../shared/local-task'
-import type { PreloadApi } from '../../../preload/api-types'
-
-type LocalTaskApi = PreloadApi['localTasks']
-
 // Why a thin wrapper, not direct window.api calls: the board, dialogs, and
 // deep links share one import surface, so a future remote-host transport only
 // changes this module.
@@ -32,5 +28,3 @@ export function updateLocalTask(args: {
 export function deleteLocalTask(projectId: string, id: number): Promise<boolean> {
   return window.api.localTasks.remove({ projectId, id })
 }
-
-export type { LocalTaskApi }

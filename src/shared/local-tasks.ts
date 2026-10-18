@@ -1,10 +1,10 @@
 import { isLocalTaskStatus, type LocalTask } from './local-task'
 import type { LocalTasksByProject } from './persisted-state-types'
 
-export const LOCAL_TASK_URL_RE = /^orca:\/\/local-task\/v1\/([^/]+)\/(\d+)$/
+export const LOCAL_TASK_URL_PREFIX = 'orca://local-task/v1/'
 
 export function buildLocalTaskUrl(projectId: string, taskId: number): string {
-  return `orca://local-task/v1/${projectId}/${taskId}`
+  return `${LOCAL_TASK_URL_PREFIX}${projectId}/${taskId}`
 }
 
 // Why row-tolerant: one malformed stored row must never take down the rest of
@@ -88,10 +88,6 @@ export function normalizeLocalTasksByProject(
     // would re-mint a live id on the next create; advancing past max keeps
     // ids unique without touching stored rows.
     const nextLocalTaskId = Math.max(counter ?? 1, maxId + 1)
-    if (tasks.length === 0) {
-      normalized[projectId] = { tasks: [], nextLocalTaskId }
-      continue
-    }
     normalized[projectId] = { tasks, nextLocalTaskId }
   }
   return normalized

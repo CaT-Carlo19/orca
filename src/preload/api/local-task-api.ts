@@ -16,5 +16,4 @@ export type LocalTaskApi = {
     status?: LocalTaskStatus
   }) => Promise<LocalTask | null>
   remove: (args: { projectId: string; id: number }) => Promise<boolean>
-  prune: (args: { knownProjectIds: string[] }) => Promise<void>
 }

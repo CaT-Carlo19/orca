@@ -41,7 +41,6 @@ describe('TaskPageLocalBoard', () => {
         onDeleteRequest={noop}
         onMove={noop}
         onOpenWorktree={noop}
-        pendingIds={new Set()}
       />
     )
     for (const status of ['todo', 'in-progress', 'done'] as const) {
@@ -68,7 +67,6 @@ describe('TaskPageLocalBoard', () => {
         onDeleteRequest={noop}
         onMove={noop}
         onOpenWorktree={noop}
-        pendingIds={new Set()}
       />
     )
     fireEvent.click(screen.getByRole('button', { name: /new task/i }))
@@ -88,7 +86,6 @@ describe('TaskPageLocalBoard', () => {
         onDeleteRequest={noop}
         onMove={noop}
         onOpenWorktree={noop}
-        pendingIds={new Set()}
       />
     )
     expect(screen.getByText(/no active project/i)).toBeDefined()
@@ -110,7 +107,6 @@ describe('TaskPageLocalBoard', () => {
         onDeleteRequest={noop}
         onMove={noop}
         onOpenWorktree={noop}
-        pendingIds={new Set()}
       />
     )
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
@@ -135,7 +131,6 @@ describe('TaskPageLocalBoard', () => {
         onDeleteRequest={onDeleteRequest}
         onMove={onMove}
         onOpenWorktree={noop}
-        pendingIds={new Set()}
       />
     )
     fireEvent.click(screen.getByRole('button', { name: /edit task 1/i }))
