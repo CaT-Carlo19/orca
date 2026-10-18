@@ -9,8 +9,10 @@ import {
 import { resolvePaneWslDistro } from './terminal-pane-wsl-distro'
 import {
   resolveTerminalHttpLinkSourceOwner,
+  resolveTerminalLinkRuntimeEnvironmentId,
   resolveTerminalRuntimeHandle
 } from './terminal-http-link-source-owner'
+import { getRuntimeTargetForWorktreeOwner } from '@/lib/file-owner-runtime-target'
 import {
   getTerminalFileOpenHint,
   getTerminalUrlOpenHint,
@@ -167,10 +169,11 @@ export function prepareTerminalPaneMount(
     managerRef: deps.managerRef,
     linkProviderDisposablesRef: refs.linkProviderDisposablesRef,
     pathExistsCache,
-    getRuntimeEnvironmentIdForPane: (paneId) => {
-      const sourceOwner = getHttpLinkSourceOwnerForPane(paneId)
-      return sourceOwner.kind === 'runtime' ? sourceOwner.runtimeEnvironmentId : null
-    },
+    getRuntimeEnvironmentIdForPane: (paneId) =>
+      resolveTerminalLinkRuntimeEnvironmentId(paneTransports.get(paneId), () => {
+        const owner = getRuntimeTargetForWorktreeOwner(useAppStore.getState(), deps.worktreeId)
+        return owner?.kind === 'environment' ? owner.environmentId : null
+      }),
     getRuntimeTerminalHandleForPane: (id) => resolveTerminalRuntimeHandle(paneTransports.get(id)),
     getLinkActionContext
   }
