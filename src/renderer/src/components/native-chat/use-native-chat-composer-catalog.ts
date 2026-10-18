@@ -2,8 +2,9 @@ import { useMemo } from 'react'
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { getVerifiedNativeChatCommands } from '../../../../shared/native-chat-agent-profiles'
 import {
-  sessionReportedSkillNames,
+  sessionReportedSkills,
   sessionSlashCommandSuggestions,
+  type NativeChatSessionSkill,
   type SlashCommandSuggestion
 } from '../../../../shared/native-chat-slash-commands'
 import { structuredSlashCommands } from '../../../../shared/structured-agent-session-composer'
@@ -11,7 +12,7 @@ import type { NativeChatStructuredComposerTransport } from './native-chat-compos
 
 export type NativeChatComposerCatalog = {
   agentCommands: readonly SlashCommandSuggestion[]
-  sessionSkillNames: readonly string[] | undefined
+  sessionSkills: readonly NativeChatSessionSkill[] | undefined
 }
 
 /**
@@ -37,9 +38,9 @@ export function useNativeChatComposerCatalog(
           : structuredSlashCommands(conversationCommands, agent),
     [agent, conversationCommands, reported, structured]
   )
-  const sessionSkillNames = useMemo(
-    () => (reported !== undefined ? sessionReportedSkillNames(reported) : undefined),
+  const sessionSkills = useMemo(
+    () => (reported !== undefined ? sessionReportedSkills(reported) : undefined),
     [reported]
   )
-  return { agentCommands, sessionSkillNames }
+  return { agentCommands, sessionSkills }
 }
