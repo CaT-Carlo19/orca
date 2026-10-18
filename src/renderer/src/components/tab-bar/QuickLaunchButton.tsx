@@ -187,7 +187,9 @@ export function ProjectedAgentMenuItems({
               'Loading agents'
             )}
           >
-            <span className={cn('h-2 rounded-full bg-muted', width)} />
+            <span aria-hidden="true" className="flex h-[1lh] flex-1 items-center">
+              <span className={cn('h-2 rounded-full bg-muted', width)} />
+            </span>
           </DropdownMenuItem>
         ))}
         <AgentSettingsMenuItem onSelect={openAgentSettings} />
