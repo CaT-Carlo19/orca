@@ -72,7 +72,8 @@ export function installStructuredAgentAvailability(
   let pass = 0
   const derive = (freshShell: boolean): void => {
     const mine = ++pass
-    void (freshShell ? recaptureHostShellEnvironment() : Promise.resolve())
+    // Why: a failed recapture still probes with the last environment, so every pass publishes.
+    void (freshShell ? recaptureHostShellEnvironment().catch(() => undefined) : Promise.resolve())
       .then(() =>
         Promise.all(
           STRUCTURED_AGENT_RUNTIME_METADATA.map((agent) => observeHostAgent(agent, runtime))
