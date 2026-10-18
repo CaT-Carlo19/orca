@@ -247,11 +247,11 @@ function mount(structured = true) {
   page.style.overflowY = 'auto'
   document.body.append(page)
   page.append(container)
-  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
     return rect(this)
   })
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(160)
-  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function () {
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (this: Element) {
     return this.getAttribute('data-short')
       ? 80
       : members(this).length * 60 +

@@ -11,7 +11,7 @@ import {
   Animated,
   Pressable,
   Platform,
-  ScrollView,
+  type ScrollView,
   Text,
   useWindowDimensions,
   View,
