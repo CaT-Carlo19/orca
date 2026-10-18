@@ -189,9 +189,8 @@ export function paramsFor(method: string): unknown {
     case 'agentSession.hold':
     case 'agentSession.release':
       return { sessionId: SESSION, holderId: 'surface-1' }
-    case 'agentSession.subscribeAvailability':
-      return { worktree: 'wt-1' }
     case 'agentSession.agents':
+    case 'agentSession.subscribeAvailability':
     case 'agentSession.restartResumable':
     case 'agentSession.restartResumableDismiss':
     case 'agentSession.restartResume':

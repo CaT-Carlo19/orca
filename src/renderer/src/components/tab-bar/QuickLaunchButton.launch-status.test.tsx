@@ -192,7 +192,6 @@ describe('QuickLaunchAgentMenuItems launches', () => {
         isRefreshing: false,
         refresh: async () => ['codex']
       },
-      availability: null,
       settling: false
     })
     launchMock.mockReset()

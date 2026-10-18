@@ -37,7 +37,7 @@ export const STRUCTURED_AGENT_SESSION_CLI_SOURCE_RUNTIME_CAPABILITY =
   'agent-session.structured.cli-source.v1' as const
 // Why: `agentSession.subscribeAvailability` is a new stream with strict params; a decoder drops an
 // unknown opcode silently, so a client subscribes only to a host advertising this and otherwise
-// keeps asking createSupport per agent.
+// shows its own facts, leaving the host's verdict to the click's createSupport.
 export const STRUCTURED_AGENT_SESSION_AVAILABILITY_RUNTIME_CAPABILITY =
   'agent-session.structured.availability.v1' as const
 

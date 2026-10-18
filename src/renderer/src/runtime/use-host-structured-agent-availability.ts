@@ -10,34 +10,35 @@ import { structuredAgentSessionTargetForHost } from './structured-agent-session-
 type AvailabilityOwner = {
   executionHostId: string
   runtimeId: string | null | undefined
-  worktreeId: string
-  /** Changes on reconnect or re-pair, which reopens a lost stream. */
+  pairingRevision: number | undefined
+  /** Changes on reconnect, which reopens a lost stream without dropping the snapshot. */
   contact: string
+  /** Whether this caller holds the stream open; the last snapshot is read either way. */
+  hold: boolean
 }
 
-/** The workspace's availability readiness, its stream held while the caller is mounted rather
- *  than while a menu is open, so no open waits on it. Null for a host that does not publish it. */
+/** The host's agent health snapshot, with no workspace in it, so switching between workspaces on
+ *  one host reads what it already has. Null for a host that does not publish it. */
 export function useHostStructuredAgentAvailability(
   owner: AvailabilityOwner | null
 ): HostStructuredAgentAvailability | null {
-  const { executionHostId = '', runtimeId, worktreeId = '', contact } = owner ?? {}
+  const { executionHostId = '', runtimeId, pairingRevision, contact, hold = false } = owner ?? {}
   const read = useCallback(
-    () => readHostStructuredAgentAvailability(executionHostId, runtimeId, worktreeId),
-    [executionHostId, runtimeId, worktreeId]
+    () => readHostStructuredAgentAvailability(executionHostId, runtimeId, pairingRevision),
+    [executionHostId, runtimeId, pairingRevision]
   )
   const availability = useSyncExternalStore(subscribeHostStructuredAgentAvailability, read, read)
-  const held = owner !== null
   useEffect(() => {
     const target = structuredAgentSessionTargetForHost(executionHostId)
-    if (!held || !target || runtimeId === undefined) {
+    if (!hold || !target || runtimeId === undefined) {
       return
     }
     return acquireHostStructuredAgentAvailability({
       target,
       executionHostId,
       runtimeId,
-      worktreeId
+      pairingRevision
     })
-  }, [held, executionHostId, runtimeId, worktreeId, contact])
-  return held ? availability : null
+  }, [hold, executionHostId, runtimeId, pairingRevision, contact])
+  return owner ? availability : null
 }

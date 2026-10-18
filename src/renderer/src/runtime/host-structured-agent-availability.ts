@@ -5,15 +5,14 @@ import {
 } from '../../../shared/agent-session-agent-availability'
 import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 import { subscribeRuntimeRpc } from './runtime-rpc-subscribe'
-import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
 
 /**
- * Which agents can open as a chat in a workspace, as its host's availability stream last published
- * it; every + menu on that workspace reads this one projection. Keyed by host, the runtime instance
- * and the workspace, so a restarted host reads as not ready until it answers.
+ * This host's agent health snapshot, as its availability stream last published it; every + menu on
+ * any of its workspaces reads this one projection. Keyed by host, runtime instance and pairing, so a
+ * restarted or re-paired host reads as not ready until it answers, while a reconnect keeps it.
  *
- * Not ready until the first complete generation lands. A stream that fails or closes is ready with
- * no answers, which every agent reads as unknown: lost contact is no verdict.
+ * Not ready until the first snapshot lands, then kept after the last holder leaves and through lost
+ * contact. A stream lost before any snapshot is ready with none, which every agent reads as unknown.
  */
 export type HostStructuredAgentAvailability =
   | { ready: false }
@@ -24,10 +23,11 @@ export type HostStructuredAgentAvailabilityOwner = {
   executionHostId: string
   /** Null for the local runtime. */
   runtimeId: string | null
-  worktreeId: string
+  pairingRevision: number | undefined
 }
 
 type Resource = {
+  executionHostId: string
   holders: number
   model: HostStructuredAgentAvailability
   /** Set while a stream is open; a lost one reopens on the next acquire, keeping the model. */
@@ -42,17 +42,21 @@ function publish(): void {
   listeners.forEach((listener) => listener())
 }
 
-function availabilityKey(executionHostId: string, runtimeId: string | null, worktreeId: string) {
-  return [executionHostId, runtimeId ?? '', worktreeId].join('\u0000')
+function availabilityKey(
+  executionHostId: string,
+  runtimeId: string | null,
+  pairingRevision: number | undefined
+) {
+  return [executionHostId, runtimeId ?? '', pairingRevision ?? ''].join('\u0000')
 }
 
-function open(key: string, resource: Resource, owner: HostStructuredAgentAvailabilityOwner): void {
+function open(key: string, resource: Resource, target: RuntimeClientTarget): void {
   let unsubscribe: (() => void) | null = null
   const close = (): void => {
     resource.close = null
     unsubscribe?.()
   }
-  // Only this open's stream, while its workspace is held, may publish or be lost.
+  // Only this open's stream, while its entry is current, may publish or be lost.
   const live = (): boolean => resources.get(key) === resource && resource.close === close
   const settle = (byAgent: ReadonlyMap<string, AgentSessionAgentAvailability>): void => {
     resource.model = { ready: true, byAgent }
@@ -61,14 +65,16 @@ function open(key: string, resource: Resource, owner: HostStructuredAgentAvailab
   const lose = (): void => {
     if (live()) {
       close()
-      settle(new Map())
+      if (!resource.model.ready) {
+        settle(new Map())
+      }
     }
   }
   resource.close = close
   void subscribeRuntimeRpc(
-    owner.target,
+    target,
     AGENT_SESSION_AVAILABILITY_METHOD,
-    { worktree: toRuntimeWorktreeSelector(owner.worktreeId) },
+    {},
     {
       onEvent: (frame) => {
         const byAgent = live() ? decodeAgentSessionAvailabilityFrame(frame) : null
@@ -88,45 +94,54 @@ function open(key: string, resource: Resource, owner: HostStructuredAgentAvailab
   }, lose)
 }
 
-/** Holds the workspace's availability stream; the last holder's release closes it. Call only for a
- *  host advertising the availability capability. */
+/** Holds the host's availability stream; the last holder's release closes it and keeps the
+ *  snapshot. Call only for a host advertising the availability capability. */
 export function acquireHostStructuredAgentAvailability(
   owner: HostStructuredAgentAvailabilityOwner
 ): () => void {
-  const key = availabilityKey(owner.executionHostId, owner.runtimeId, owner.worktreeId)
-  const resource = resources.get(key) ?? { holders: 0, model: NOT_READY, close: null }
-  resources.set(key, resource)
-  if (!resource.close) {
-    open(key, resource, owner)
+  const key = availabilityKey(owner.executionHostId, owner.runtimeId, owner.pairingRevision)
+  let resource = resources.get(key)
+  if (!resource) {
+    // A retired runtime or an earlier pairing of this host is never read again.
+    for (const [staleKey, stale] of resources) {
+      if (stale.executionHostId === owner.executionHostId && stale.holders === 0) {
+        resources.delete(staleKey)
+      }
+    }
+    resource = { executionHostId: owner.executionHostId, holders: 0, model: NOT_READY, close: null }
+    resources.set(key, resource)
   }
-  resource.holders += 1
+  if (!resource.close) {
+    open(key, resource, owner.target)
+  }
+  const held = resource
+  held.holders += 1
   let released = false
   return () => {
     if (released) {
       return
     }
     released = true
-    resource.holders -= 1
-    // Why a microtask: a holder that re-acquires in the same commit keeps the answers it has.
+    held.holders -= 1
+    // Why a microtask: a holder that re-acquires in the same commit keeps the stream it has.
     queueMicrotask(() => {
-      if (resource.holders === 0 && resources.get(key) === resource) {
-        resources.delete(key)
-        resource.close?.()
-        publish()
+      if (held.holders === 0) {
+        held.close?.()
       }
     })
   }
 }
 
-/** The workspace's readiness on this runtime; not ready when nothing holds its stream. */
+/** The host's last snapshot on this runtime and pairing; not ready before its first. */
 export function readHostStructuredAgentAvailability(
   executionHostId: string,
   runtimeId: string | null | undefined,
-  worktreeId: string
+  pairingRevision: number | undefined
 ): HostStructuredAgentAvailability {
   return runtimeId === undefined
     ? NOT_READY
-    : (resources.get(availabilityKey(executionHostId, runtimeId, worktreeId))?.model ?? NOT_READY)
+    : (resources.get(availabilityKey(executionHostId, runtimeId, pairingRevision))?.model ??
+        NOT_READY)
 }
 
 export function subscribeHostStructuredAgentAvailability(listener: () => void): () => void {

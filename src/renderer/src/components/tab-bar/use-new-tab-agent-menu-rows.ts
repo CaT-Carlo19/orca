@@ -1,5 +1,4 @@
-import { waitForPromiseWithSignal } from '../../../../shared/abort-signal-reason'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   STRUCTURED_AGENT_SESSION_AVAILABILITY_RUNTIME_CAPABILITY as AVAILABILITY,
@@ -10,7 +9,6 @@ import { lastVerifiedRuntimeStatus } from '../../../../shared/runtime-host-statu
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import { isNativeChatEnabled } from '../../../../shared/structured-native-chat-launch-route'
-import { isNativeChatProviderDisplayedOn } from '../../../../shared/native-chat-providers'
 import { useAppStore } from '@/store'
 import {
   structuredAgentLaunchSupport,
@@ -21,9 +19,7 @@ import {
   workspaceKindForWorktreeId
 } from '@/lib/agent-launch-route-input'
 import { chatProviderAgents, useHostStructuredAgentsVersion } from '@/lib/chat-provider-agents'
-import { askHostCreateSupport } from '@/lib/structured-agent-session-host-admission'
 import { structuredAgentSessionTargetForHost } from '@/runtime/structured-agent-session-owner'
-import { toRuntimeWorktreeSelector } from '@/runtime/runtime-worktree-selector'
 import {
   readHostStructuredAgents,
   relearnHostStructuredAgents
@@ -37,12 +33,6 @@ import {
 } from '@/runtime/local-runtime-capabilities'
 import { useDetectedAgents, type AgentDetectionTarget } from '@/hooks/useDetectedAgents'
 import { readDetectedAgentsForTarget } from '@/lib/agent-detection-target-inventory'
-import {
-  hostChatAnswersVersion,
-  readHostChatAnswer,
-  recordHostChatAnswer,
-  subscribeHostChatAnswers
-} from './new-tab-host-chat-answers'
 
 function hostChatAnswer(input: AgentLaunchRoutingInput): HostChatAnswer {
   const support = structuredAgentLaunchSupport(input)
@@ -69,23 +59,6 @@ function hostChatAnswer(input: AgentLaunchRoutingInput): HostChatAnswer {
   }
 }
 
-function answerFromSupport(
-  support: Awaited<ReturnType<typeof askHostCreateSupport>>
-): HostChatAnswer {
-  if (support.kind === 'admitted') {
-    return 'yes'
-  }
-  if (support.kind === 'declined') {
-    if (['remote', 'remote-execution-host', 'ssh'].includes(support.reason ?? '')) {
-      return 'ssh'
-    }
-    if (['wsl', 'project-runtime'].includes(support.reason ?? '')) {
-      return 'wsl'
-    }
-  }
-  return 'not-on-host'
-}
-
 export type NewTabAgentMenuModel = ReturnType<typeof useNewTabAgentMenuRows>
 
 /** `detectionTarget` is the workspace's agent-inventory host, resolved by the caller. */
@@ -94,7 +67,7 @@ export function useNewTabAgentMenuRows(
   open: boolean,
   detectionTarget: AgentDetectionTarget | undefined
 ) {
-  // Why: hidden worktrees stay mounted, so only the shown one holds its host's checks.
+  // Why: hidden worktrees stay mounted, so only the shown one holds its host's streams.
   const worktreeShown = useAppStore((state) => state.activeWorktreeId === worktreeId)
   // Why: acquiring while the workspace is shown means the first open already knows its agents.
   const acquired = useDetectedAgents(open || worktreeShown ? detectionTarget : undefined)
@@ -121,24 +94,11 @@ export function useNewTabAgentMenuRows(
           : undefined
       return {
         executionHostId: input.executionHostId,
-        runtimeId: lastVerifiedRuntimeStatus(status)?.runtimeId,
+        runtimeId: host?.kind === 'runtime' ? lastVerifiedRuntimeStatus(status)?.runtimeId : null,
         pairingRevision:
           host?.kind === 'runtime' ? getRuntimeEnvironmentRevision(host.environmentId) : undefined,
-        connection: status?.connectionGeneration,
-        reconnect: status?.hostContactEpoch,
-        preliminary: hostChatAnswer(input),
-        capabilities: input.hostCapabilities?.join(','),
-        command: input.executionHostId === 'local' ? state.settings?.agentCmdOverrides : undefined,
-        args: input.executionHostId === 'local' ? state.settings?.agentDefaultArgs : undefined,
-        env: input.executionHostId === 'local' ? state.settings?.agentDefaultEnv : undefined,
-        inheritShell:
-          input.executionHostId === 'local'
-            ? state.settings?.nativeChatInheritShellEnvironment
-            : undefined,
-        shellVariables:
-          input.executionHostId === 'local'
-            ? state.settings?.nativeChatShellEnvironmentVariables
-            : undefined
+        contact: `${status?.connectionGeneration}:${status?.hostContactEpoch}`,
+        capabilities: input.hostCapabilities?.join(',')
       }
     })
   )
@@ -157,43 +117,20 @@ export function useNewTabAgentMenuRows(
         .filter((agent) => settings?.nativeChatProviders?.[agent] === true)
     ])
   ]
-  const enabled = (agent: TuiAgent) =>
-    !settings?.disabledTuiAgents?.includes(agent) &&
-    isNativeChatProviderDisplayedOn(settings, agent, detection.detectedIds)
-  const eligible =
-    isNativeChatEnabled(settings) && input.hostCapabilities !== null
-      ? chatAgents
-          .filter(
-            (agent) =>
-              enabled(agent) &&
-              detection.detectedIds?.includes(agent) !== false &&
-              ['yes', 'not-yet-known'].includes(hostChatAnswer(inputFor(agent)))
-          )
-          .join(',')
-      : ''
-  // Only launch-affecting configuration retires display reads; unrelated settings do not.
-  // Why not `open`: answers outlive the menu so a reopen shows them at once while they refresh.
-  const owner = useMemo(() => ({ ...facts, worktreeId, eligible }), [facts, worktreeId, eligible])
-  const ownerKey = useMemo(() => JSON.stringify({ ...facts, worktreeId }), [facts, worktreeId])
-  useSyncExternalStore(subscribeHostChatAnswers, hostChatAnswersVersion, hostChatAnswersVersion)
-  // Agents this open's reads gave up on; cleared with the reads so the next open asks again.
-  const [unanswered, setUnanswered] = useState<ReadonlySet<TuiAgent>>(new Set())
   const chatEnabled = isNativeChatEnabled(settings)
-  // Why a branch: a host publishing availability answers every agent at once from its own stream;
-  // an older host keeps the per-agent createSupport reads below, unchanged.
-  const publishing = input.hostCapabilities?.includes(AVAILABILITY) === true
+  // Why a branch: a host publishing availability answers every agent from its one health snapshot;
+  // an older host shows this client's facts, and the click's admission states the host's refusal.
   const published =
-    Boolean(structuredAgentSessionTargetForHost(facts.executionHostId)) && publishing
+    input.hostCapabilities?.includes(AVAILABILITY) === true &&
+    Boolean(structuredAgentSessionTargetForHost(facts.executionHostId))
   const availability = useHostStructuredAgentAvailability(
-    published && chatEnabled && (worktreeShown || open)
+    published && chatEnabled
       ? {
           executionHostId: facts.executionHostId,
-          runtimeId:
-            parseExecutionHostId(facts.executionHostId)?.kind === 'runtime'
-              ? facts.runtimeId
-              : null,
-          worktreeId,
-          contact: `${facts.pairingRevision}:${facts.connection}:${facts.reconnect}`
+          runtimeId: facts.runtimeId,
+          pairingRevision: facts.pairingRevision,
+          contact: facts.contact,
+          hold: worktreeShown || open
         }
       : null
   )
@@ -214,60 +151,8 @@ export function useNewTabAgentMenuRows(
       )
     }
   }, [open, chatEnabled, facts, worktreeId, catalogLoaded])
-  useEffect(() => {
-    const target = structuredAgentSessionTargetForHost(owner.executionHostId)
-    if (!open || !target || !owner.eligible || published) {
-      return
-    }
-    let active = true
-    let answered = 0
-    const controller = new AbortController()
-    const agents = owner.eligible.split(',').filter(isTuiAgent)
-    // Why: a slow host is not a refusal; the deadline only releases the reads.
-    const giveUp = (gaveUp: readonly TuiAgent[]) =>
-      setUnanswered((previous) => new Set([...previous, ...gaveUp]))
-    const timer = setTimeout(() => {
-      active = false
-      controller.abort()
-      giveUp(agents)
-    }, 10_000)
-    for (const agent of agents) {
-      void waitForPromiseWithSignal(
-        askHostCreateSupport(target, toRuntimeWorktreeSelector(worktreeId), agent, {
-          signal: controller.signal,
-          expectedEnvironmentPairingRevision: owner.pairingRevision,
-          expectedEnvironmentRuntimeId: owner.runtimeId
-        }),
-        controller.signal
-      ).then(
-        (support) => {
-          if (!active) {
-            return
-          }
-          answered += 1
-          if (answered === agents.length) {
-            clearTimeout(timer)
-          }
-          if (support.kind === 'admitted' || support.kind === 'declined') {
-            recordHostChatAnswer(ownerKey, agent, answerFromSupport(support))
-          } else {
-            giveUp([agent])
-          }
-        },
-        () => undefined
-      )
-    }
-    return () => {
-      active = false
-      clearTimeout(timer)
-      controller.abort()
-      setUnanswered(new Set())
-    }
-  }, [owner, ownerKey, open, worktreeId, published])
-  const asking = structuredAgentSessionTargetForHost(owner.executionHostId)
-    ? owner.eligible.split(',')
-    : []
-  // Only reads that settle on their own count: a failed stream is ready, and legacy reads give up.
+  // Only reads that settle on their own count: detection finishes or fails, and a stream that fails
+  // before its first snapshot is ready.
   let waiting =
     detection.detectedIds === null &&
     !detection.detectionFailed &&
@@ -280,37 +165,18 @@ export function useNewTabAgentMenuRows(
     catalogLoaded,
     hostChatAnswer: (agent) => {
       const preliminary = hostChatAnswer(inputFor(agent))
-      if (!['yes', 'not-yet-known'].includes(preliminary)) {
+      if (!availability || !['yes', 'not-yet-known'].includes(preliminary)) {
         return preliminary
       }
-      if (availability) {
-        // One complete generation answers every row; until it lands, the menu holds a placeholder.
-        if (!availability.ready) {
-          waiting = true
-          return 'not-yet-known'
-        }
-        const answer = availability.byAgent.get(agent)
-        // An agent the host could not check leaves this client's facts, as an unanswered read does.
-        return answer && answer.state !== 'unknown'
-          ? answerFromSupport(
-              answer.state === 'available'
-                ? { kind: 'admitted' }
-                : { kind: 'declined', ...(answer.reason ? { reason: answer.reason } : {}) }
-            )
-          : preliminary
-      }
-      const recorded = readHostChatAnswer(ownerKey, agent)
-      if (recorded) {
-        return recorded
-      }
-      // Why: the menu holds a placeholder while its host is asked, so no row moves under the pointer.
-      // A host that could not answer leaves this client's facts; the click's admission owns a refusal.
-      if (open && asking.includes(agent) && !unanswered.has(agent)) {
+      // One snapshot answers every row; until the first lands, the menu holds a placeholder.
+      if (!availability.ready) {
         waiting = true
         return 'not-yet-known'
       }
-      return preliminary
+      const verdict = availability.byAgent.get(agent)?.state
+      // An agent the host could not check keeps this client's facts; the click's admission decides.
+      return verdict === 'available' ? 'yes' : verdict === 'refused' ? 'not-on-host' : preliminary
     }
   }).map((row) => ({ ...row, executionHostId: parseExecutionHostId(facts.executionHostId)?.id }))
-  return { rows, detection, availability, settling: waiting }
+  return { rows, detection, settling: waiting }
 }

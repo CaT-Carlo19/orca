@@ -4,8 +4,8 @@
 // Additive and negotiated: a client calls it only once the host advertises
 // `agent-session.structured.registered-agents.v1`; without it, a client knows Claude and Codex only.
 //
-// `agentSession.subscribeAvailability` — which of those agents can open as a chat in one
-// workspace, as complete generations from the host's shared resource. Negotiated separately.
+// `agentSession.subscribeAvailability` — this host's health snapshot of its installed agents, as
+// complete replacements from the runtime's one shared resource. Negotiated separately.
 
 import type { AgentSessionAgentsResult } from '../../../../shared/agent-session-registered-agents'
 import { AGENT_SESSION_AGENTS_METHOD } from '../../../../shared/agent-session-registered-agents'
@@ -45,7 +45,7 @@ export const STRUCTURED_AGENT_SESSION_AGENTS_METHODS = [
     name: AGENT_SESSION_AVAILABILITY_METHOD,
     permission: 'workspace',
     params: AvailabilityParams,
-    handler: async (params, ctx, emit) => {
+    handler: async (_params, ctx, emit) => {
       requireStructuredCapability(ctx)
       const subscriptionId = structuredAgentSessionAvailabilitySubscriptionId(ctx)
       let release = (): void => {}
@@ -53,7 +53,7 @@ export const STRUCTURED_AGENT_SESSION_AGENTS_METHODS = [
       if (stream.isClosed()) {
         return
       }
-      release = ctx.runtime.subscribeStructuredAgentAvailability(params.worktree, (agents) => {
+      release = ctx.runtime.subscribeStructuredAgentAvailability((agents) => {
         const frame: AgentSessionAvailabilityFrame = {
           type: 'availability',
           // The audience of `agentSession.agents`: no client hears of an agent it cannot open.
@@ -61,6 +61,10 @@ export const STRUCTURED_AGENT_SESSION_AGENTS_METHODS = [
         }
         emit(frame)
       })
+      // A replayed snapshot can close the transport before `release` was assigned.
+      if (stream.isClosed()) {
+        release()
+      }
     }
   })
 ] as const

@@ -1,7 +1,7 @@
 /**
- * `agentSession.subscribeAvailability`: whether each agent the host registered can open as a chat
- * in one workspace, as the host's own create-support check answers there. Every frame is the
- * complete answer for that workspace and replaces the one before. Published only by hosts
+ * `agentSession.subscribeAvailability`: the health of this host's installed agents, from each
+ * agent's location rule and installed-release check on the host itself, not in any workspace.
+ * Every frame is the complete snapshot and replaces the one before. Published only by hosts
  * advertising the availability capability; `agentSession.agents` stays the static list.
  */
 
@@ -11,7 +11,7 @@ import { openEnum } from './zod-salvage'
 
 export const AGENT_SESSION_AVAILABILITY_METHOD = 'agentSession.subscribeAvailability'
 
-/** `refused` carries createSupport's reason (`agent`, `remote`, `wsl`); `unknown` is a check that
+/** `refused` carries the reason (`agent`: this host cannot run its chat); `unknown` is a check that
  *  could not answer, which is never a refusal. */
 export type AgentSessionAgentAvailability =
   | { agent: string; state: 'available' }

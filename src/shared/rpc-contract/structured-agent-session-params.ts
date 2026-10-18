@@ -282,10 +282,8 @@ export const AcknowledgeAttentionParams = OptionsParams.extend({ observedCursor:
 /** `agentSession.agents` takes nothing: the list is the host's, whichever client asks. */
 export const AgentsParams = z.object({}).strict()
 
-/** `agentSession.subscribeAvailability` names the workspace whose launches it answers for. */
-export const AvailabilityParams = z.strictObject({
-  worktree: Identifier('Invalid worktree selector')
-})
+/** `agentSession.subscribeAvailability` takes nothing: the snapshot is the host's. */
+export const AvailabilityParams = z.strictObject({})
 
 /** `sessionId` scopes the catalog to that session's pinned account; without a
  *  session record the host keys it by the account a new launch would pin.

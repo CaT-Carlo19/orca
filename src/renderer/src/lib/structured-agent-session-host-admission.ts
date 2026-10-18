@@ -48,8 +48,7 @@ export type HostCreateSupport =
 export async function askHostCreateSupport(
   target: RuntimeClientTarget,
   worktree: string,
-  agent: TuiAgent,
-  options: Parameters<typeof callStructuredAgentSession>[3] = {}
+  agent: TuiAgent
 ): Promise<HostCreateSupport> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -57,7 +56,7 @@ export async function askHostCreateSupport(
         supported: boolean
         reason?: string
         seedOptions?: unknown
-      }>(target, 'agentSession.createSupport', { worktree, agent }, options)
+      }>(target, 'agentSession.createSupport', { worktree, agent })
       if (support.supported !== true) {
         return {
           kind: 'declined',
@@ -70,9 +69,6 @@ export async function askHostCreateSupport(
       return seedOptions ? { kind: 'admitted', seedOptions } : { kind: 'admitted' }
     } catch (error) {
       if (hasRuntimeRpcErrorCode(error, SELECTOR_NOT_RESOLVABLE_CODE)) {
-        if (options.signal?.aborted) {
-          return { kind: 'workspace-unresolved' }
-        }
         const retryDelayMs = CREATE_SUPPORT_RETRY_DELAYS_MS[attempt]
         if (retryDelayMs === undefined) {
           return { kind: 'workspace-unresolved' }

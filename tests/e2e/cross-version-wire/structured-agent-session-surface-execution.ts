@@ -30,10 +30,7 @@ export function runtimeStub(overrides: Record<string, unknown> = {}): unknown {
       return resolved
     },
     publishStructuredAgentSessionTab: () => {},
-    subscribeStructuredAgentAvailability: (
-      _worktree: string,
-      read: (agents: unknown[]) => void
-    ) => {
+    subscribeStructuredAgentAvailability: (read: (agents: unknown[]) => void) => {
       read([])
       return () => {}
     },

@@ -1,117 +1,106 @@
-// What `agentSession.subscribeAvailability` publishes: one in-memory resource per workspace, shared
-// by every reader of it. Each generation asks the same create-support check a launch asks, for
-// every registered agent in that workspace, and is published only once all of them answered.
+// What `agentSession.subscribeAvailability` publishes: one health snapshot of this host's agents,
+// shared by every reader and kept without them. Each agent's location rule and installed-release
+// check run once, in the server's home rather than a workspace; a launch checks again in its own.
 
+import { homedir } from 'node:os'
 import type { AgentSessionAgentAvailability } from '../../shared/agent-session-agent-availability'
-import type { StructuredAgentId } from '../../shared/agent-session-provider-handle'
-import type { StructuredAgentSessionCreateSupport } from '../native-chat/structured-agent-session-create-support'
-import { registerWorktreeChangeInvalidator } from '../ipc/worktree-change-invalidators'
+import type { AgentSessionExecutionLocation } from '../../shared/agent-session-record'
+import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
+import type { GlobalSettings } from '../../shared/global-settings-types'
 import { onAgentsRefreshedOnHost } from '../preflight/workspace-agent-detection'
-import { STRUCTURED_AGENT_LAUNCH_SETTINGS } from './structured-agent-launch-support'
+import { observeStructuredAgentLaunch } from './structured-agent-launch-support'
 import { STRUCTURED_AGENT_RUNTIME_METADATA } from './structured-agent-runtime-metadata'
+import type { StructuredAgentRuntimeMetadata } from './structured-agent-runtime-registration-types'
+import { recaptureHostShellEnvironment } from './structured-agent-shell-environment'
 import type { RuntimeStore } from './runtime-store-contract'
 
 export type StructuredAgentAvailabilityReader = (
   agents: readonly AgentSessionAgentAvailability[]
 ) => void
 
-type Workspace = {
-  readers: Set<StructuredAgentAvailabilityReader>
-  latest?: readonly AgentSessionAgentAvailability[]
-  pass: number
+// Why: these pick the profile-loading shell the check's environment is captured from.
+const SHELL_SETTINGS = ['terminalWindowsShell', 'terminalWindowsPowerShellImplementation'] as const
+/** Every setting the snapshot reads, so a change to any of them can change it. */
+const HEALTH_SETTINGS = [
+  'agentCmdOverrides',
+  'agentDefaultEnv',
+  'nativeChatInheritShellEnvironment',
+  'nativeChatShellEnvironmentVariables',
+  ...SHELL_SETTINGS
+] as const satisfies readonly (keyof GlobalSettings)[]
+
+// Why native: health is this machine's; a workspace's WSL or remote route is the client's rule.
+const HOST_LOCATION: AgentSessionExecutionLocation = {
+  executionHostId: LOCAL_EXECUTION_HOST_ID,
+  wslDistro: null,
+  workspaceId: '',
+  workspaceKind: 'folder'
 }
 
-type CreateSupport = (
-  worktree: string,
-  agent: StructuredAgentId
-) => Promise<StructuredAgentSessionCreateSupport>
+type HealthRuntime = Parameters<typeof observeStructuredAgentLaunch>[2]
 
-export function createStructuredAgentAvailability(deps: {
-  agents: () => readonly StructuredAgentId[]
-  support: CreateSupport
-}) {
-  const workspaces = new Map<string, Workspace>()
-
-  const derive = (worktree: string, workspace: Workspace): void => {
-    const pass = ++workspace.pass
-    void Promise.all(
-      deps.agents().map((agent) =>
-        deps.support(worktree, agent).then(
-          (support): AgentSessionAgentAvailability =>
-            support.supported
-              ? { agent, state: 'available' }
-              : { agent, state: 'refused', ...(support.reason ? { reason: support.reason } : {}) },
-          // A check that could not answer (an unresolved workspace, a failed probe) is no verdict.
-          (): AgentSessionAgentAvailability => ({ agent, state: 'unknown' })
-        )
-      )
-    ).then((agents) => {
-      // A retired workspace or a newer pass supersedes this one, so nothing is owed after either.
-      if (workspaces.get(worktree) !== workspace || pass !== workspace.pass) {
-        return
-      }
-      workspace.latest = agents
-      workspace.readers.forEach((read) => read(agents))
-    })
+async function observeHostAgent(
+  { definition: { agent }, supportsLocation }: StructuredAgentRuntimeMetadata,
+  runtime: HealthRuntime
+): Promise<AgentSessionAgentAvailability> {
+  if (!supportsLocation(HOST_LOCATION)) {
+    return { agent, state: 'refused', reason: 'agent' }
   }
-
-  const rederive = (only: (workspace: Workspace) => boolean = () => true): void => {
-    for (const [worktree, workspace] of workspaces) {
-      if (only(workspace)) {
-        derive(worktree, workspace)
-      }
-    }
+  // A failed probe or an unrunnable Command setting says nothing about the installed release.
+  const seen = await observeStructuredAgentLaunch(
+    agent,
+    async () => homedir(),
+    runtime,
+    false
+  ).catch(() => 'inconclusive' as const)
+  if (seen === 'inconclusive') {
+    return { agent, state: 'unknown' }
   }
-
-  return {
-    /** Reads the workspace's latest generation and every later one; returns the release. */
-    subscribe(worktree: string, read: StructuredAgentAvailabilityReader): () => void {
-      let workspace = workspaces.get(worktree)
-      if (!workspace) {
-        workspace = { readers: new Set(), pass: 0 }
-        workspaces.set(worktree, workspace)
-        derive(worktree, workspace)
-      }
-      const joined = workspace
-      joined.readers.add(read)
-      if (joined.latest) {
-        read(joined.latest)
-      }
-      return () => {
-        joined.readers.delete(read)
-        if (joined.readers.size === 0 && workspaces.get(worktree) === joined) {
-          workspaces.delete(worktree)
-        }
-      }
-    },
-    /** A launch setting or the installed agents changed: every live workspace answers again. */
-    rederive: () => rederive(),
-    /** A workspace appeared: one that could not be resolved before may answer now. */
-    rederiveUnanswered: () =>
-      rederive(
-        (workspace) =>
-          !workspace.latest || workspace.latest.some(({ state }) => state === 'unknown')
-      )
-  }
+  return seen === 'supported'
+    ? { agent, state: 'available' }
+    : { agent, state: 'refused', reason: 'agent' }
 }
 
-export type StructuredAgentAvailability = ReturnType<typeof createStructuredAgentAvailability>
-
-/** The runtime's resource, re-derived on the host events that can change a launch's answer. */
+/** The runtime's snapshot: taken now, then again on a launch setting change or an explicit agent
+ *  Refresh (after a fresh shell capture). No reader gates it, so a later one reads it at once. */
 export function installStructuredAgentAvailability(
   store: Pick<RuntimeStore, 'onSettingsChanged'> | null,
-  support: CreateSupport
-): StructuredAgentAvailability {
-  const availability = createStructuredAgentAvailability({
-    agents: () => STRUCTURED_AGENT_RUNTIME_METADATA.map(({ definition }) => definition.agent),
-    support
-  })
+  runtime: HealthRuntime
+) {
+  const readers = new Set<StructuredAgentAvailabilityReader>()
+  let latest: readonly AgentSessionAgentAvailability[] | undefined
+  let pass = 0
+  const derive = (freshShell: boolean): void => {
+    const mine = ++pass
+    void (freshShell ? recaptureHostShellEnvironment() : Promise.resolve())
+      .then(() =>
+        Promise.all(
+          STRUCTURED_AGENT_RUNTIME_METADATA.map((agent) => observeHostAgent(agent, runtime))
+        )
+      )
+      .then((agents) => {
+        // A newer pass supersedes this one, so nothing is owed after it.
+        if (mine === pass) {
+          latest = agents
+          readers.forEach((read) => read(agents))
+        }
+      })
+  }
   store?.onSettingsChanged?.((updates) => {
-    if (STRUCTURED_AGENT_LAUNCH_SETTINGS.some((key) => key in updates)) {
-      availability.rederive()
+    if (HEALTH_SETTINGS.some((key) => key in updates)) {
+      derive(SHELL_SETTINGS.some((key) => key in updates))
     }
   })
-  onAgentsRefreshedOnHost(availability.rederive)
-  registerWorktreeChangeInvalidator(availability.rederiveUnanswered)
-  return availability
+  onAgentsRefreshedOnHost(() => derive(true))
+  derive(false)
+  return {
+    /** Reads the latest snapshot and every later one; returns the release. */
+    subscribe(read: StructuredAgentAvailabilityReader): () => void {
+      readers.add(read)
+      if (latest) {
+        read(latest)
+      }
+      return () => readers.delete(read)
+    }
+  }
 }
